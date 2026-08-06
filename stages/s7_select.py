@@ -230,30 +230,32 @@ def select_scenario(
     if select_mode != "scenario":
         raise ValueError("only SELECT_MODE=scenario is supported")
     cache_path = cache_dir / f"{scenario_id}.json"
-    normalized_ledger = normalize_ledger_to_usd(ledger, extraction.get("adjustments", []))
+    scoped_ledger = ledger[ledger["txn_id"].str.startswith(f"TXN-{scenario_id}-")].reset_index(drop=True)
+    prompt_ledger = normalize_ledger_to_usd(scoped_ledger, extraction.get("adjustments", []))
+    validation_ledger = normalize_ledger_to_usd(ledger, extraction.get("adjustments", []))
     if cache_path.exists():
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
         validate_selection_shape(cached["output"])
         reject_uncertain_substitution(cached["output"], extraction)
-        output, warnings = apply_deterministic_guards(output=cached["output"], ledger=normalized_ledger, extraction=extraction)
+        output, warnings = apply_deterministic_guards(output=cached["output"], ledger=prompt_ledger, extraction=extraction)
         return SelectionResult(output=output, usage=cached["usage"], soft_warnings=cached["soft_warnings"] + warnings)
     response = client.create_structured_message(
         system=PROMPT_PATH.read_text(encoding="utf-8"),
-        user=build_context(extraction=extraction, ledger=normalized_ledger),
+        user=build_context(extraction=extraction, ledger=prompt_ledger),
         tool_name="emit_selection",
         input_schema=selection_schema(extraction),
     )
     try:
         validate_selection_shape(response.output)
         reject_uncertain_substitution(response.output, extraction)
-        output, guard_warnings = apply_deterministic_guards(output=response.output, ledger=normalized_ledger, extraction=extraction)
+        output, guard_warnings = apply_deterministic_guards(output=response.output, ledger=prompt_ledger, extraction=extraction)
         result = SelectionResult(
             output=output,
             usage=response.usage,
             soft_warnings=guard_warnings + validate_selection(
                 scenario_id=scenario_id,
                 output=output,
-                ledger=normalized_ledger,
+                ledger=validation_ledger,
                 extraction=extraction,
             ),
         )

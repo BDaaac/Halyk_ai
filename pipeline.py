@@ -228,21 +228,129 @@ def resolve_documents(scenario_id: str):
     )
 
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ScenarioClauseResult:
+    actual: Decimal
+    status: str
+    evidence_txn_id: str | None
+
+
+def _load_extraction(scenario_id: str) -> dict:
+    path = get_settings().workspace_dir / "extractions" / f"{scenario_id}.json"
+    return json.loads(path.read_text(encoding="utf-8"))["output"]
+
+
+def _load_selection(scenario_id: str) -> dict:
+    path = get_settings().workspace_dir / "selections" / f"{scenario_id}.json"
+    return json.loads(path.read_text(encoding="utf-8"))["output"]
+
+
+@lru_cache(maxsize=None)
 def get_specifications():
-    raise NotImplementedError("stage 6")
+    from stages.s8_compute import specifications_from_extraction
+
+    result = {}
+    template = json.loads((get_settings().data_dir / "submission_template.json").read_text(encoding="utf-8"))
+    for scenario_id in template["answers"]:
+        try:
+            extraction = _load_extraction(scenario_id)
+        except FileNotFoundError:
+            continue
+        result[scenario_id] = specifications_from_extraction(scenario_id, extraction)
+    return result
 
 
-def related_party_threshold(scenario_id: str):
-    raise NotImplementedError("stage 6")
+def related_party_threshold(scenario_id: str) -> Decimal:
+    extraction = _load_extraction(scenario_id)
+    return Decimal(str(extraction["related_parties"]["threshold_percent"]))
 
 
-def related_parties(scenario_id: str):
-    raise NotImplementedError("stage 8")
+def related_parties(scenario_id: str) -> list[str]:
+    from stages.s7_select import filtered_related_parties
+
+    extraction = _load_extraction(scenario_id)
+    filtered = filtered_related_parties(extraction)
+    return [entity["name"] for entity in filtered.get("entities", [])]
 
 
-def run_scenario(scenario_id: str):
-    raise NotImplementedError("stage 8")
+def _scenario_results(scenario_id: str) -> dict[str, ScenarioClauseResult]:
+    from stages.s8_compute import build_clause_selection, evaluate_covenant, specifications_from_extraction
+    from stages.s9_evidence import (
+        counterfactual_kind,
+        evidence_candidates,
+        find_counterfactual_evidence as resolve_evidence,
+        reverted_adjustments,
+    )
+
+    extraction = _load_extraction(scenario_id)
+    selection = _load_selection(scenario_id)
+    specs = specifications_from_extraction(scenario_id, extraction)
+    adjustments = extraction.get("adjustments", [])
+    ledger = _read_ledger()
+
+    results: dict[str, ScenarioClauseResult] = {}
+    for clause_id, spec in specs.items():
+        selected_roles = selection.get(clause_id, {})
+        if not isinstance(selected_roles, dict):
+            continue
+        values = build_clause_selection(spec, selected_roles, ledger, adjustments)
+        result = evaluate_covenant(spec, values)
+
+        def recompute(txn_id: str, _spec=spec, _roles=selected_roles):
+            kind = counterfactual_kind(txn_id, adjustments, ledger)
+            if kind == "revert_adjustment":
+                candidate_roles = _roles
+                candidate_adjustments = reverted_adjustments(txn_id, adjustments, ledger)
+            else:
+                candidate_roles = {
+                    role: [candidate for candidate in ids if candidate != txn_id]
+                    for role, ids in _roles.items()
+                }
+                candidate_adjustments = adjustments
+            candidate_values = build_clause_selection(_spec, candidate_roles, ledger, candidate_adjustments)
+            return evaluate_covenant(_spec, candidate_values)
+
+        evidence = resolve_evidence(
+            base_status=result.status,
+            candidates=evidence_candidates(selected_roles, adjustments, ledger),
+            recompute=recompute,
+        )
+        results[clause_id] = ScenarioClauseResult(
+            actual=result.actual.quantize(Decimal("0.01")),
+            status=result.status,
+            evidence_txn_id=evidence,
+        )
+    return results
+
+
+def run_scenario(scenario_id: str) -> dict[str, ScenarioClauseResult]:
+    return _scenario_results(scenario_id)
 
 
 def recompute_without(scenario_id: str, clause_id: str, txn_id: str):
-    raise NotImplementedError("stage 9")
+    from stages.s8_compute import build_clause_selection, evaluate_covenant, specifications_from_extraction
+    from stages.s9_evidence import counterfactual_kind, reverted_adjustments
+
+    extraction = _load_extraction(scenario_id)
+    selection = _load_selection(scenario_id)
+    specs = specifications_from_extraction(scenario_id, extraction)
+    spec = specs[clause_id]
+    selected_roles = selection.get(clause_id, {})
+    adjustments = extraction.get("adjustments", [])
+    ledger = _read_ledger()
+
+    kind = counterfactual_kind(txn_id, adjustments, ledger)
+    if kind == "revert_adjustment":
+        candidate_roles = selected_roles
+        candidate_adjustments = reverted_adjustments(txn_id, adjustments, ledger)
+    else:
+        candidate_roles = {
+            role: [candidate for candidate in ids if candidate != txn_id]
+            for role, ids in selected_roles.items()
+        }
+        candidate_adjustments = adjustments
+    values = build_clause_selection(spec, candidate_roles, ledger, candidate_adjustments)
+    return evaluate_covenant(spec, values)

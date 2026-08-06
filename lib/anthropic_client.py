@@ -72,6 +72,7 @@ class AnthropicClient:
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: dict[str, str] | None = None,
+        temperature: float | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {"model": self.model, "max_tokens": max_tokens, "messages": messages}
         if system is not None:
@@ -80,6 +81,8 @@ class AnthropicClient:
             payload["tools"] = tools
         if tool_choice is not None:
             payload["tool_choice"] = tool_choice
+        if temperature is not None:
+            payload["temperature"] = temperature
         response = self._post(payload)
         self.usage_history.append(self._usage(response))
         return response
@@ -92,6 +95,7 @@ class AnthropicClient:
         tool_name: str,
         input_schema: dict[str, Any],
         max_tokens: int = 4096,
+        temperature: float | None = None,
     ) -> StructuredResult:
         response = self.create_message(
             system=system,
@@ -99,6 +103,7 @@ class AnthropicClient:
             max_tokens=max_tokens,
             tools=[{"name": tool_name, "description": "Return the requested structured result.", "input_schema": input_schema}],
             tool_choice={"type": "tool", "name": tool_name},
+            temperature=temperature,
         )
         tool_uses = [block for block in response.get("content", []) if block.get("type") == "tool_use" and block.get("name") == tool_name]
         if len(tool_uses) != 1 or not isinstance(tool_uses[0].get("input"), dict):
