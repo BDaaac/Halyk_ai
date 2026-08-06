@@ -21,4 +21,6 @@ def test_scorer_baseline_floor():
     template = json.loads((FIXTURES / "submission_template.json").read_text(encoding="utf-8"))
     ground_truth = json.loads((FIXTURES / "ground_truth.json").read_text(encoding="utf-8"))
 
-    assert 0.26 <= score_submission(baseline_submission(template), ground_truth).mean <= 0.27
+    score = score_submission(baseline_submission(template), ground_truth).mean
+    assert round(score, 4) == 0.2639
+    assert 0.26 <= score <= 0.27
