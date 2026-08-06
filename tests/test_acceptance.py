@@ -8,7 +8,9 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import pandas as pd
 import pytest
+import pipeline
 
 from lib.expressions import ExpressionTooDeep, add, divide, evaluate, max_, subtract, sum_
 from lib.text import normalize_identifiers
@@ -65,6 +67,37 @@ def test_account_scenario_mapping():
     mapping = get_account_to_scenario()
     assert mapping["ACC-7201"] == "B1"
     assert mapping["ACC-7801"] == "P1"
+
+
+def test_scenario_filter_uses_template_not_prefix():
+    """Сценарии приватного набора могут не начинаться с B или P."""
+    ledger = pd.DataFrame(
+        {
+            "txn_id": ["TXN-T1-0001", "TXN-ZZ9-0001", "TXN-9001-0001"],
+            "account_id": ["ACC-T1", "ACC-ZZ9", "ACC-9001"],
+        }
+    )
+    template = {"answers": {"T1": {}, "ZZ9": {}}}
+    build_mapping = getattr(pipeline, "build_mapping", None)
+    assert build_mapping is not None, "mapping must filter by template scenario keys"
+    mapping = build_mapping(ledger, template=template)
+    assert set(mapping.values()) == {"T1", "ZZ9"}
+
+
+def test_correction_parser_keeps_sign_without_word_order():
+    """Сумма и идентификатор могут стоять в любом порядке в примечании."""
+    parser = getattr(pipeline, "parse_transaction_correction", None)
+    assert parser is not None, "stage 5 must parse an amount and its sign together"
+    before_id = parser(
+        "\u0424\u0430\u043a\u0442\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u0441\u0443\u043c\u043c\u0430 $10.00 (\u0440\u0430\u0441\u0445\u043e\u0434) \u043f\u043e TXN-T1-0001",
+        "TXN-T1-0001",
+    )
+    after_id = parser(
+        "TXN-ZZ9-0001: $20.00 (\u043f\u043e\u0441\u0442\u0443\u043f\u043b\u0435\u043d\u0438\u0435)",
+        "TXN-ZZ9-0001",
+    )
+    assert before_id == (Decimal("10.00"), "expense")
+    assert after_id == (Decimal("20.00"), "income")
 
 
 def test_targeted_retrieval_closes_gaps():
