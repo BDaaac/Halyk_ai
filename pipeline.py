@@ -42,6 +42,10 @@ def run_pipeline(*, stop_after_stage: int | None = None):
     template = json.loads((settings.data_dir / "submission_template.json").read_text(encoding="utf-8"))
     submission = deepcopy(template)
 
+    from lib.consolidated_retrieval import patch_group_capex
+
+    document_index = build_document_index()
+
     for scenario_id, clauses in submission["answers"].items():
         extraction_path = settings.workspace_dir / "extractions" / f"{scenario_id}.json"
         selection_path = settings.workspace_dir / "selections" / f"{scenario_id}.json"
@@ -49,6 +53,9 @@ def run_pipeline(*, stop_after_stage: int | None = None):
             continue
         extraction = json.loads(extraction_path.read_text(encoding="utf-8"))["output"]
         selection = json.loads(selection_path.read_text(encoding="utf-8"))["output"]
+        documents = resolve_documents(scenario_id)
+        if documents.kyc:
+            patch_group_capex(extraction, document_index, document_index[documents.kyc].text)
         specs = specifications_from_extraction(scenario_id, extraction)
         adjustments = extraction.get("adjustments", [])
 
