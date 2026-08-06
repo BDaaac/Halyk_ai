@@ -10,9 +10,11 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import models
 import pipeline
 
 from lib.expressions import ExpressionTooDeep, add, divide, evaluate, max_, subtract, sum_
+from config import get_settings
 from lib.text import normalize_identifiers
 from pipeline import (
     build_document_index,
@@ -49,9 +51,15 @@ def test_b1_document_set():
     documents = resolve_documents("B1")
     assert documents.agreement == "b38facf69a94"
     assert documents.kyc == "c66b5b638410"
+    assert documents.audit_notes == "a16d7a619f87"
     assert documents.aup_report == "448b59e12768"
     assert "b084add0e80a" in documents.rejected
     assert "2762d1c605e6" in documents.rejected
+
+
+def test_p10_audit_notes_are_available_without_an_aup_report_number():
+    documents = resolve_documents("P10")
+    assert documents.audit_notes == "4db1d630055f"
 
 
 def test_letter_spaced_ids_normalized():
@@ -136,6 +144,99 @@ def test_expression_depth_limit():
         evaluate(_nested_expr(depth=5))
 
 
+def test_evidence_uses_only_a_unique_counterfactual_flipper():
+    finder = getattr(pipeline, "find_counterfactual_evidence", None)
+    assert finder is not None, "stage 9 must resolve evidence deterministically"
+    statuses = {"TXN-B1-0020": "COMPLIANT", "TXN-B1-0023": "BREACH"}
+    assert finder(
+        base_status="BREACH",
+        candidates=list(statuses),
+        recompute=lambda txn_id: statuses[txn_id],
+    ) == "TXN-B1-0020"
+    assert finder(
+        base_status="COMPLIANT",
+        candidates=list(statuses),
+        recompute=lambda txn_id: statuses[txn_id],
+    ) is None
+    assert finder(
+        base_status="BREACH",
+        candidates=["TXN-B1-0020", "TXN-B1-0040"],
+        recompute=lambda _: "COMPLIANT",
+    ) is None
+
+
+def _phase3_contract_types():
+    expr = getattr(models, "Expr", None)
+    condition = getattr(models, "Condition", None)
+    specification = getattr(models, "CovenantSpec", None)
+    assert expr and condition and specification, "stage 8 needs structured covenant contracts"
+    return expr, condition, specification
+
+
+def test_p3_springing_condition_has_structured_threshold():
+    Expr, Condition, CovenantSpec = _phase3_contract_types()
+    specification = CovenantSpec(
+        scenario_id="P3",
+        clause_id="6.1",
+        value_expr=Expr(op="sum", role="debt_service"),
+        operator=">=",
+        threshold=Decimal("1.70"),
+        applicability=Condition(
+            expr=Expr(op="sum", role="financing_proceeds"),
+            operator=">",
+            threshold=Decimal("4000000.00"),
+            raw_text="applies only when financing proceeds exceed $4,000,000.00",
+        ),
+    )
+    assert specification.applicability is not None
+    assert specification.applicability.threshold == Decimal("4000000.00")
+
+
+def test_p7_exception_has_structured_condition():
+    Expr, Condition, CovenantSpec = _phase3_contract_types()
+    specification = CovenantSpec(
+        scenario_id="P7",
+        clause_id="6.3",
+        value_expr=Expr(op="sum", role="restricted_payment"),
+        operator="<=",
+        threshold=Decimal("500000.00"),
+        exception=Condition(
+            expr=Expr(op="sum", role="creditor_approved_payment"),
+            operator=">",
+            threshold=Decimal("0"),
+            raw_text="except transactions approved by the creditor in writing",
+        ),
+    )
+    assert specification.exception is not None
+    assert specification.exception.expr.role == "creditor_approved_payment"
+
+
+def test_non_applicable_covenant_is_compliant_with_real_actual():
+    Expr, Condition, CovenantSpec = _phase3_contract_types()
+    evaluator = getattr(pipeline, "evaluate_covenant", None)
+    assert evaluator is not None, "stage 8 must evaluate applicability separately from actual"
+    specification = CovenantSpec(
+        scenario_id="T1",
+        clause_id="6.1",
+        value_expr=Expr(op="sum", role="restricted_payment"),
+        operator="<=",
+        threshold=Decimal("100.00"),
+        applicability=Condition(
+            expr=Expr(op="sum", role="financing_proceeds"),
+            operator=">",
+            threshold=Decimal("4000000.00"),
+            raw_text="springing condition",
+        ),
+    )
+    result = evaluator(
+        specification,
+        {"restricted_payment": [Decimal("150.00")], "financing_proceeds": [Decimal("0")]},
+    )
+    assert result.status == "COMPLIANT"
+    assert result.actual == Decimal("150.00")
+    assert result.actual > specification.threshold
+
+
 def test_b1_all_three():
     result = run_scenario("B1")
     assert result["6.1"].status == "BREACH"
@@ -164,6 +265,20 @@ def test_p3_springing_condition_parsed():
 
 def test_baseline_written_first():
     assert run_pipeline(stop_after_stage=0)["answers"]
+
+
+def test_stage_zero_writes_atomic_valid_baseline(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path))
+    submission = run_pipeline(stop_after_stage=0)
+    on_disk = json.loads((tmp_path / "submission.json").read_text(encoding="utf-8"))
+    template = json.loads((get_settings().data_dir / "submission_template.json").read_text(encoding="utf-8"))
+    assert on_disk == submission
+    assert set(on_disk["answers"]) == set(template["answers"])
+    assert all(
+        cell == {"status": "COMPLIANT", "actual": 0.01, "evidence_txn_id": None}
+        for clauses in on_disk["answers"].values()
+        for cell in clauses.values()
+    )
 
 
 def test_all_cells_present():

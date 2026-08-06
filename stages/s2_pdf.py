@@ -36,6 +36,8 @@ def _version_status(text: str) -> str:
 
 def _document_type(text: str, report_number: str | None) -> str:
     lower = text.lower()
+    if re.search(r"\u0430\u0443\u0434\u0438\u0442\u043e\u0440\s*\u0441\u043a\u043e\u0435\s+\u0434\u0435\u043b\u043e", lower):
+        return "audit_notes"
     if re.search(r"\u0434\u043e\u0433\u043e\u0432\u043e\u0440\s+\u0431\u0430\u043d\u043a\u043e\u0432\u0441\u043a\u043e\u0433\u043e\s+\u0437\u0430\u0439\u043c\u0430", lower):
         return "agreement"
     if re.search(r"\u0437\u043d\u0430\u0439\s+\u0441\u0432\u043e\u0435\u0433\u043e\s+\u043a\u043b\u0438\u0435\u043d\u0442\s*\u0430", lower):

@@ -2,6 +2,8 @@
 
 import json
 import re
+import time
+from copy import deepcopy
 from decimal import Decimal
 from functools import lru_cache
 
@@ -17,7 +19,77 @@ def _read_ledger() -> pd.DataFrame:
 
 
 def run_pipeline(*, stop_after_stage: int | None = None):
-    raise NotImplementedError("stage 0")
+    from stages.s0_baseline import run
+
+    settings = get_settings()
+    baseline = run(settings.data_dir, settings.workspace_dir)
+    # Stages 1–12 are attached incrementally.  Until their orchestration is
+    # ready, returning this persisted baseline keeps every run submit-safe.
+    if stop_after_stage is not None and stop_after_stage <= 0:
+        return baseline
+
+    from stages.s0_baseline import _write_json_atomically
+    from stages.s8_compute import build_clause_selection, evaluate_covenant, specifications_from_extraction
+    from stages.s9_evidence import (
+        counterfactual_kind,
+        evidence_candidates,
+        find_counterfactual_evidence,
+        reverted_adjustments,
+    )
+
+    started = time.perf_counter()
+    ledger = _read_ledger()
+    template = json.loads((settings.data_dir / "submission_template.json").read_text(encoding="utf-8"))
+    submission = deepcopy(template)
+
+    for scenario_id, clauses in submission["answers"].items():
+        extraction_path = settings.workspace_dir / "extractions" / f"{scenario_id}.json"
+        selection_path = settings.workspace_dir / "selections" / f"{scenario_id}.json"
+        if not extraction_path.exists() or not selection_path.exists():
+            continue
+        extraction = json.loads(extraction_path.read_text(encoding="utf-8"))["output"]
+        selection = json.loads(selection_path.read_text(encoding="utf-8"))["output"]
+        specs = specifications_from_extraction(scenario_id, extraction)
+        adjustments = extraction.get("adjustments", [])
+
+        for clause_id, cell in clauses.items():
+            spec = specs.get(clause_id)
+            selected_roles = selection.get(clause_id, {})
+            if spec is None or not isinstance(selected_roles, dict):
+                continue
+            values = build_clause_selection(spec, selected_roles, ledger, adjustments)
+            result = evaluate_covenant(spec, values)
+
+            def recompute(txn_id: str):
+                kind = counterfactual_kind(txn_id, adjustments, ledger)
+                if kind == "revert_adjustment":
+                    candidate_roles = selected_roles
+                    candidate_adjustments = reverted_adjustments(txn_id, adjustments, ledger)
+                else:
+                    candidate_roles = {
+                        role: [candidate for candidate in ids if candidate != txn_id]
+                        for role, ids in selected_roles.items()
+                    }
+                    candidate_adjustments = adjustments
+                candidate_values = build_clause_selection(spec, candidate_roles, ledger, candidate_adjustments)
+                return evaluate_covenant(spec, candidate_values)
+
+            evidence = find_counterfactual_evidence(
+                base_status=result.status,
+                candidates=evidence_candidates(selected_roles, adjustments, ledger),
+                recompute=recompute,
+            )
+            cell.update(
+                status=result.status,
+                actual=float(result.actual.quantize(Decimal("0.01"))),
+                evidence_txn_id=evidence,
+            )
+
+    # Keep submission schema identical to the organizer template.  Timing is
+    # diagnostic metadata, not a submission field.
+    run_pipeline.last_timings = {"stage_8_9": time.perf_counter() - started}
+    _write_json_atomically(settings.workspace_dir / "submission.json", submission)
+    return submission
 
 
 def gap_scan():
@@ -89,6 +161,18 @@ def parse_transaction_correction(text: str, txn_id: str) -> tuple[Decimal, str] 
     return amount, sign
 
 
+def find_counterfactual_evidence(*, base_status, candidates, recompute):
+    from stages.s9_evidence import find_counterfactual_evidence as resolve
+
+    return resolve(base_status=base_status, candidates=candidates, recompute=recompute)
+
+
+def evaluate_covenant(spec, selection):
+    from stages.s8_compute import evaluate_covenant as evaluate
+
+    return evaluate(spec, selection)
+
+
 def get_corrections():
     from models import Correction, SourceRef
 
@@ -123,10 +207,23 @@ def resolve_documents(scenario_id: str):
         and document.version_status == "active"
         and document.report_number in report_numbers
     ]
+    report_ids = {document.report_number for document in reports}
+    audit_notes = [
+        document
+        for document in own
+        if document.version_status == "active" and document.doc_type == "audit_notes"
+    ] + [
+        document
+        for document in own
+        if document.version_status == "active"
+        and document.doc_type == "noise"
+        and any(reference in report_ids for reference in document.references)
+    ]
     return DocumentSet(
         agreement=agreements[0].doc_id if agreements else None,
         kyc=kyc[0].doc_id if kyc else None,
         aup_report=reports[0].doc_id if reports else None,
+        audit_notes=audit_notes[0].doc_id if audit_notes else None,
         rejected=[document.doc_id for document in own if document.version_status != "active"],
     )
 
