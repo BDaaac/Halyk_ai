@@ -18,3 +18,9 @@ def test_scanned_pdf_routes_to_vision():
     _, method = extract_text(DATA / "documents" / "f3fa6d20c8a1.pdf")
 
     assert method == "vision"
+
+
+def test_normalization_preserves_non_identifier_prose():
+    source = "ﬁнансовые условия не меняются без согласия сторон"
+
+    assert normalize_identifiers(source) == source

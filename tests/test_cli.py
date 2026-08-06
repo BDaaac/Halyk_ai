@@ -33,4 +33,17 @@ def test_eval_reports_unimplemented_pipeline():
     )
 
     assert result.returncode != 0
+    assert "eval requires stage 0" in result.stderr
+
+
+def test_run_keeps_a_distinct_unimplemented_path():
+    result = subprocess.run(
+        [sys.executable, "main.py", "run"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
     assert "stage 0" in result.stderr
+    assert "eval requires" not in result.stderr

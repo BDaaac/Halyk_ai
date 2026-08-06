@@ -15,6 +15,11 @@ def score_command(submission_path: Path, ground_truth_path: Path) -> None:
     print(score_submission(submission, ground_truth).report())
 
 
+def eval_command() -> None:
+    """Резервирует отдельный путь для будущего запуска с оценкой."""
+    raise NotImplementedError("eval requires stage 0")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Проверка кредитных ковенантов")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -29,8 +34,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "score":
         score_command(args.submission, args.ground_truth)
-    elif args.command in {"run", "eval"}:
+    elif args.command == "run":
         run_pipeline()
+    elif args.command == "eval":
+        eval_command()
     else:
         raise NotImplementedError("diff")
 
