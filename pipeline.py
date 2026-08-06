@@ -46,54 +46,89 @@ def run_pipeline(*, stop_after_stage: int | None = None):
 
     document_index = build_document_index()
 
+    errors_path = settings.workspace_dir / "errors.log"
+    errors_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def log_error(scope: str, error: Exception) -> None:
+        with errors_path.open("a", encoding="utf-8") as log:
+            log.write(f"{scope}: {type(error).__name__}: {error}\n")
+
+    def cell_is_valid(status, actual_decimal, evidence, ledger_frame) -> bool:
+        """Hard invariants; on failure the baseline cell is kept."""
+        if status not in ("COMPLIANT", "BREACH"):
+            return False
+        try:
+            actual_value = Decimal(str(actual_decimal))
+        except Exception:
+            return False
+        if not actual_value.is_finite() or actual_value <= 0:
+            return False
+        if evidence is not None:
+            if not isinstance(evidence, str) or "-" not in evidence:
+                return False
+            if evidence not in set(ledger_frame["txn_id"].astype(str)):
+                return False
+        return True
+
     for scenario_id, clauses in submission["answers"].items():
         extraction_path = settings.workspace_dir / "extractions" / f"{scenario_id}.json"
         selection_path = settings.workspace_dir / "selections" / f"{scenario_id}.json"
         if not extraction_path.exists() or not selection_path.exists():
             continue
-        extraction = json.loads(extraction_path.read_text(encoding="utf-8"))["output"]
-        selection = json.loads(selection_path.read_text(encoding="utf-8"))["output"]
-        documents = resolve_documents(scenario_id)
-        if documents.kyc:
-            patch_group_capex(extraction, document_index, document_index[documents.kyc].text)
-        specs = specifications_from_extraction(scenario_id, extraction)
-        adjustments = extraction.get("adjustments", [])
+        try:
+            extraction = json.loads(extraction_path.read_text(encoding="utf-8"))["output"]
+            selection = json.loads(selection_path.read_text(encoding="utf-8"))["output"]
+            documents = resolve_documents(scenario_id)
+            if documents.kyc:
+                patch_group_capex(extraction, document_index, document_index[documents.kyc].text)
+            specs = specifications_from_extraction(scenario_id, extraction)
+            adjustments = extraction.get("adjustments", [])
+        except Exception as error:
+            log_error(f"{scenario_id} setup", error)
+            continue
 
         for clause_id, cell in clauses.items():
-            spec = specs.get(clause_id)
-            selected_roles = selection.get(clause_id, {})
-            if spec is None or not isinstance(selected_roles, dict):
+            try:
+                spec = specs.get(clause_id)
+                selected_roles = selection.get(clause_id, {})
+                if spec is None or not isinstance(selected_roles, dict):
+                    continue
+                values = build_clause_selection(spec, selected_roles, ledger, adjustments)
+                result = evaluate_covenant(spec, values)
+
+                def recompute(txn_id: str, _spec=spec, _roles=selected_roles):
+                    kind = counterfactual_kind(txn_id, adjustments, ledger)
+                    if kind == "revert_adjustment":
+                        candidate_roles = _roles
+                        candidate_adjustments = reverted_adjustments(txn_id, adjustments, ledger)
+                    else:
+                        candidate_roles = {
+                            role: [candidate for candidate in ids if candidate != txn_id]
+                            for role, ids in _roles.items()
+                        }
+                        candidate_adjustments = adjustments
+                    candidate_values = build_clause_selection(_spec, candidate_roles, ledger, candidate_adjustments)
+                    return evaluate_covenant(_spec, candidate_values)
+
+                evidence = find_counterfactual_evidence(
+                    base_status=result.status,
+                    candidates=evidence_candidates(selected_roles, adjustments, ledger),
+                    recompute=recompute,
+                )
+                actual_quantized = float(result.actual.quantize(Decimal("0.01")))
+                if not cell_is_valid(result.status, actual_quantized, evidence, ledger):
+                    log_error(f"{scenario_id} {clause_id} invariants", ValueError(f"status={result.status} actual={actual_quantized}"))
+                    continue
+                cell.update(
+                    status=result.status,
+                    actual=actual_quantized,
+                    evidence_txn_id=evidence,
+                )
+                _write_json_atomically(settings.workspace_dir / "submission.json", submission)
+            except Exception as error:
+                log_error(f"{scenario_id} {clause_id}", error)
                 continue
-            values = build_clause_selection(spec, selected_roles, ledger, adjustments)
-            result = evaluate_covenant(spec, values)
 
-            def recompute(txn_id: str):
-                kind = counterfactual_kind(txn_id, adjustments, ledger)
-                if kind == "revert_adjustment":
-                    candidate_roles = selected_roles
-                    candidate_adjustments = reverted_adjustments(txn_id, adjustments, ledger)
-                else:
-                    candidate_roles = {
-                        role: [candidate for candidate in ids if candidate != txn_id]
-                        for role, ids in selected_roles.items()
-                    }
-                    candidate_adjustments = adjustments
-                candidate_values = build_clause_selection(spec, candidate_roles, ledger, candidate_adjustments)
-                return evaluate_covenant(spec, candidate_values)
-
-            evidence = find_counterfactual_evidence(
-                base_status=result.status,
-                candidates=evidence_candidates(selected_roles, adjustments, ledger),
-                recompute=recompute,
-            )
-            cell.update(
-                status=result.status,
-                actual=float(result.actual.quantize(Decimal("0.01"))),
-                evidence_txn_id=evidence,
-            )
-
-    # Keep submission schema identical to the organizer template.  Timing is
-    # diagnostic metadata, not a submission field.
     run_pipeline.last_timings = {"stage_8_9": time.perf_counter() - started}
     _write_json_atomically(settings.workspace_dir / "submission.json", submission)
     return submission

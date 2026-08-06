@@ -294,6 +294,26 @@ def test_evidence_belongs_to_scenario():
                 assert cell["evidence_txn_id"].split("-")[1] == scenario_id
 
 
+def test_pipeline_survives_missing_extraction():
+    """A single missing cache file must not break the whole submission."""
+    from config import get_settings
+
+    settings = get_settings()
+    extraction = settings.workspace_dir / "extractions" / "B1.json"
+    backup = extraction.with_suffix(".json.backup")
+    extraction.rename(backup)
+    try:
+        submission = run_pipeline()
+    finally:
+        backup.rename(extraction)
+    template = json.loads((FIXTURES / "submission_template.json").read_text(encoding="utf-8"))
+    assert set(submission["answers"]) == set(template["answers"])
+    for clauses in submission["answers"].values():
+        for cell in clauses.values():
+            assert "status" in cell
+            assert "actual" in cell
+
+
 def test_actual_always_positive_two_decimals():
     for clauses in run_pipeline()["answers"].values():
         for cell in clauses.values():
