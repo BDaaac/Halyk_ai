@@ -1,1 +1,8 @@
 .worktrees/
+workspace/
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+agentic-bank-public/
+reports/

@@ -298,7 +298,6 @@ REP_RE = re.compile(r"A\s*R\s*[-–—]\s*(\d)\s*(\d)\s*(\d)\s*(\d)\s*[-–—]\
 TXN_RE = re.compile(r"T\s*X\s*N\s*[-–—]\s*([A-Z0-9]+)\s*[-–—]\s*(\d+)")
 
 def normalize_identifiers(text: str) -> str:
-    text = unicodedata.normalize("NFKC", text)
     text = ACC_RE.sub(lambda m: "ACC-" + "".join(m.groups()), text)
     text = REP_RE.sub(lambda m: "AR-" + "".join(m.groups()[:4]) + "-" + "".join(m.groups()[4:]), text)
     text = TXN_RE.sub(lambda m: f"TXN-{m.group(1)}-{m.group(2)}", text)
