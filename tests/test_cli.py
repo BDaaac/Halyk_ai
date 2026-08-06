@@ -36,7 +36,8 @@ def test_eval_reports_unimplemented_pipeline():
     assert "eval requires stage 0" in result.stderr
 
 
-def test_run_keeps_a_distinct_unimplemented_path():
+def test_run_writes_baseline_before_later_stages(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path))
     result = subprocess.run(
         [sys.executable, "main.py", "run"],
         cwd=ROOT,
@@ -44,6 +45,5 @@ def test_run_keeps_a_distinct_unimplemented_path():
         capture_output=True,
     )
 
-    assert result.returncode != 0
-    assert "stage 0" in result.stderr
-    assert "eval requires" not in result.stderr
+    assert result.returncode == 0
+    assert (tmp_path / "submission.json").exists()
