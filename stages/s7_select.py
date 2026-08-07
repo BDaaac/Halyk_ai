@@ -118,33 +118,76 @@ def validate_selection_shape(output: dict[str, Any]) -> None:
                 raise ValueError(f"{clause_id}/{role} must contain only transaction ID strings")
 
 
-def reject_uncertain_substitution(output: dict[str, Any], extraction: dict[str, Any]) -> None:
-    uncertain_roles = {
-        str(item.get("role"))
+def clause_semantic_errors(output: dict[str, Any], extraction: dict[str, Any]) -> dict[str, str]:
+    """Per-clause semantic problems that are safe to salvage around.
+
+    Returns ``{clause_id: reason}`` for clauses whose selection is
+    self-inconsistent — the model listed a transaction under ``uncertain``
+    for a role that the clause never actually filled, or a required role
+    is empty despite the model itself flagging a candidate for it.
+    Clauses NOT in the returned map are semantically OK; they may still
+    fail shape validation, which is a separate concern (see
+    ``validate_selection_shape``).
+    """
+    errors: dict[str, str] = {}
+    uncertain_items = [
+        (str(item.get("txn_id")), str(item.get("role")))
         for item in output.get("uncertain", [])
-        if isinstance(item, dict) and item.get("role")
-    }
-    for covenant in extraction.get("covenants", []):
-        clause_id = str(covenant.get("clause_id"))
-        roles = output.get(clause_id, {})
+        if isinstance(item, dict) and isinstance(item.get("txn_id"), str) and isinstance(item.get("role"), str)
+    ]
+    uncertain_roles = {role for _, role in uncertain_items}
+
+    # A clause with role X gets blamed for uncertain[txn, X] if it never
+    # placed that txn into any of its roles. If several clauses share
+    # role X, all of them are blamed — dropping any single one is enough
+    # to unlink the uncertain item, but reporting them jointly makes the
+    # salvage decision transparent in soft_warnings.
+    covenants_by_clause = {str(c.get("clause_id")): c for c in extraction.get("covenants", [])}
+    for clause_id, covenant in covenants_by_clause.items():
+        roles = output.get(clause_id)
         if not isinstance(roles, dict):
-            roles = {}
-        for role in covenant.get("role_descriptions", {}):
-            if not roles.get(role) and role in uncertain_roles:
-                raise ValueError(f"{clause_id}/{role} is empty despite uncertain candidates")
-    for item in output.get("uncertain", []):
-        if not isinstance(item, dict):
             continue
-        txn_id = item.get("txn_id")
-        role = item.get("role")
-        if not isinstance(txn_id, str) or not isinstance(role, str):
+        role_descriptions = covenant.get("role_descriptions", {}) or {}
+        # Check 1: empty required role despite uncertain candidate for it.
+        for role in role_descriptions:
+            if roles.get(role):
+                continue
+            if role in uncertain_roles:
+                errors[clause_id] = f"role {role!r} is empty despite an uncertain candidate for it"
+                break
+        if clause_id in errors:
             continue
-        if not any(
-            txn_id in roles.get(role, [])
-            for clause_id, roles in output.items()
-            if clause_id != "uncertain" and isinstance(roles, dict)
-        ):
-            raise ValueError(f"uncertain transaction {txn_id} is not selected for role {role}")
+        # Check 2: uncertain[txn, role] where role belongs to this clause
+        # but the txn was never placed into it.
+        for txn_id, role in uncertain_items:
+            if role not in role_descriptions:
+                continue
+            if txn_id not in roles.get(role, []):
+                errors[clause_id] = f"uncertain transaction {txn_id} for role {role!r} was not placed here"
+                break
+    return errors
+
+
+def reject_uncertain_substitution(output: dict[str, Any], extraction: dict[str, Any]) -> None:
+    """Back-compat wrapper: raise on any per-clause semantic error.
+
+    Kept for tests that assert the exception path; the orchestrator
+    (``select_scenario``) has moved to calling ``clause_semantic_errors``
+    directly so it can salvage the valid clauses.
+    """
+    errors = clause_semantic_errors(output, extraction)
+    if not errors:
+        return
+    clause_id, reason = next(iter(errors.items()))
+    if "empty despite an uncertain candidate" in reason:
+        role = reason.split("'")[1]
+        raise ValueError(f"{clause_id}/{role} is empty despite uncertain candidates")
+    if "was not placed here" in reason:
+        parts = reason.split()
+        txn_id = parts[2]
+        role = parts[5].strip("'")
+        raise ValueError(f"uncertain transaction {txn_id} is not selected for role {role}")
+    raise ValueError(f"{clause_id}: {reason}")
 
 
 def _words(value: str) -> set[str]:
@@ -243,43 +286,59 @@ def select_scenario(
     if cache_path.exists():
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
         validate_selection_shape(cached["output"])
-        reject_uncertain_substitution(cached["output"], extraction)
+        # Cached selections have already been salvaged (dropped clauses
+        # were replaced with {}), so per-clause validation would only
+        # produce warnings — skip it and reuse the cached output.
         output, warnings = apply_deterministic_guards(output=cached["output"], ledger=prompt_ledger, extraction=extraction)
         return SelectionResult(output=output, usage=cached["usage"], soft_warnings=cached["soft_warnings"] + warnings)
 
-    # Sonnet is sampled (temperature not fixed at 0 — Sonnet-5 rejects the
-    # parameter), so a shape-rejected first call usually returns a clean
-    # structure on the second try. One retry catches the bulk of stage-7
-    # instability that otherwise drops a scenario to baseline.
+    prompt_user = build_context(extraction=extraction, ledger=prompt_ledger)
+
+    # Structural / semantic errors are split. Shape errors (list where a
+    # dict was expected, wrong element types) come from a broken model
+    # response and warrant a fresh call with the validation error fed
+    # back to the model. Per-clause semantic errors (an uncertain
+    # transaction the model itself flagged that ended up in no clause)
+    # are salvaged: only the offending clauses are dropped, the rest of
+    # the scenario keeps its answers.
     attempts: list[dict[str, Any]] = []
     last_response = None
-    last_error: Exception | None = None
     for attempt in range(2):
+        user_prompt = prompt_user
+        if attempts:
+            last_error_text = attempts[-1]["error"]
+            user_prompt = (
+                prompt_user
+                + "\n\n<repair>Previous output failed validation:\n"
+                + last_error_text
+                + "\nReturn a corrected selection. Do not change unrelated clauses.\n</repair>"
+            )
         response = client.create_structured_message(
             system=PROMPT_PATH.read_text(encoding="utf-8"),
-            user=build_context(extraction=extraction, ledger=prompt_ledger),
+            user=user_prompt,
             tool_name="emit_selection",
             input_schema=selection_schema(extraction),
         )
         last_response = response
         try:
             validate_selection_shape(response.output)
-            reject_uncertain_substitution(response.output, extraction)
-            output, guard_warnings = apply_deterministic_guards(
-                output=response.output, ledger=prompt_ledger, extraction=extraction
-            )
         except (ValueError, AttributeError, TypeError, KeyError) as error:
             attempts.append({"output": response.output, "error": f"{type(error).__name__}: {error}"})
-            last_error = error
             continue
 
-        retry_note: list[str] = []
-        if attempts:
-            retry_note.append(f"stage7 accepted on retry after: {attempts[0]['error']}")
+        # Shape is fine — proceed to per-clause salvage.
+        salvaged_output, salvage_warnings = _salvage_clauses(response.output, extraction)
+        output, guard_warnings = apply_deterministic_guards(
+            output=salvaged_output, ledger=prompt_ledger, extraction=extraction
+        )
+        retry_note = (
+            [f"stage7 accepted on retry after: {attempts[0]['error']}"] if attempts else []
+        )
         result = SelectionResult(
             output=output,
             usage=response.usage,
             soft_warnings=retry_note
+            + salvage_warnings
             + guard_warnings
             + validate_selection(
                 scenario_id=scenario_id,
@@ -291,14 +350,36 @@ def select_scenario(
         _write_cache(cache_path, {"output": result.output, "usage": result.usage, "soft_warnings": result.soft_warnings})
         return result
 
-    # Both attempts failed. Persist raw output(s) for inspection and re-raise.
+    # Two attempts, both structurally broken. Persist for inspection.
+    reason = attempts[-1]["error"]
     _write_cache(
         cache_dir / "rejected" / f"{scenario_id}.json",
         {
             "output": last_response.output if last_response is not None else None,
             "usage": last_response.usage if last_response is not None else None,
-            "reason": f"{type(last_error).__name__}: {last_error}" if last_error else "unknown",
+            "reason": reason,
             "attempts": attempts,
         },
     )
-    raise last_error  # type: ignore[misc]
+    raise ValueError(reason)
+
+
+def _salvage_clauses(
+    output: dict[str, Any], extraction: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Return (output_with_broken_clauses_dropped, warnings).
+
+    Clauses with per-clause semantic errors are replaced by an empty
+    dict — downstream ``run_pipeline`` sees the empty selection and
+    leaves the cell at the stage-0 baseline instead of crashing the
+    whole scenario.
+    """
+    errors = clause_semantic_errors(output, extraction)
+    if not errors:
+        return output, []
+    salvaged = deepcopy(output)
+    warnings: list[str] = []
+    for clause_id, reason in errors.items():
+        salvaged[clause_id] = {}
+        warnings.append(f"stage7 salvage: {clause_id} dropped ({reason})")
+    return salvaged, warnings

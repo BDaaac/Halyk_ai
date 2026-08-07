@@ -351,3 +351,57 @@ def test_actual_always_positive_two_decimals():
         for cell in clauses.values():
             assert cell["actual"] > 0
             assert Decimal(str(cell["actual"])).as_tuple().exponent >= -2
+
+
+def test_compute_health_signals_from_workspace(tmp_path: Path):
+    """Every run must emit the internal signals we use to pick between
+    runs on 9 August — that is, without any ground truth."""
+    from pipeline import _compute_health
+
+    workspace = tmp_path
+    (workspace / "selections").mkdir()
+    (workspace / "selections" / "rejected").mkdir()
+    (workspace / "selections" / "A.json").write_text(
+        json.dumps({
+            "output": {"6.1": {"revenue": ["TXN-A-1"]}},
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "soft_warnings": ["stage7 salvage: 6.2 dropped (…)", "some other warning"],
+        }),
+        encoding="utf-8",
+    )
+    (workspace / "selections" / "B.json").write_text(
+        json.dumps({
+            "output": {"6.1": {}},
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "soft_warnings": ["stage7 accepted on retry after: something"],
+        }),
+        encoding="utf-8",
+    )
+    (workspace / "selections" / "rejected" / "C.json").write_text(
+        json.dumps({"reason": "both attempts failed"}), encoding="utf-8"
+    )
+    submission = {
+        "answers": {
+            "A": {
+                "6.1": {"status": "BREACH", "actual": 1.5, "evidence_txn_id": "TXN-A-2"},
+                "6.2": {"status": "COMPLIANT", "actual": 0.01, "evidence_txn_id": None},
+            },
+            "B": {
+                "6.1": {"status": "COMPLIANT", "actual": 0.01, "evidence_txn_id": None},
+            },
+            "C": {
+                "6.1": {"status": "COMPLIANT", "actual": 0.01, "evidence_txn_id": None},
+            },
+        }
+    }
+
+    health = _compute_health(submission, workspace)
+
+    assert health["total_cells"] == 4
+    assert health["baseline_cells"] == 3
+    assert health["computed_cells"] == 1
+    assert health["valid_selections"] == 2
+    assert health["rejected_scenarios"] == 1
+    assert health["salvaged_clauses"] == 1
+    assert health["retried_selections"] == 1
+    assert health["soft_warnings"] == 3

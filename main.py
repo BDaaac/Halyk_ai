@@ -47,6 +47,7 @@ def run_command(*, fresh: bool, data_dir: str | None) -> None:
     timings = getattr(run_pipeline, "last_timings", {}) or {}
     usage = getattr(run_pipeline, "last_usage", {}) or {}
     cost = getattr(run_pipeline, "last_cost_usd", {}) or {}
+    health = getattr(run_pipeline, "last_health", {}) or {}
     if timings or usage or cost:
         print("timings (seconds):")
         for stage, value in sorted(timings.items()):
@@ -62,6 +63,17 @@ def run_command(*, fresh: bool, data_dir: str | None) -> None:
                 )
         total_cost = sum(cost.values(), Decimal("0"))
         print(f"llm cost total: ${total_cost}")
+    if health:
+        print(
+            "health: "
+            f"baseline={health.get('baseline_cells', 0)}/{health.get('total_cells', 0)} "
+            f"computed={health.get('computed_cells', 0)} "
+            f"valid_selections={health.get('valid_selections', 0)} "
+            f"rejected={health.get('rejected_scenarios', 0)} "
+            f"salvaged={health.get('salvaged_clauses', 0)} "
+            f"retried={health.get('retried_selections', 0)} "
+            f"warnings={health.get('soft_warnings', 0)}"
+        )
 
 
 def view_command(*, ground_truth: Path | None, data_dir: str | None, output: Path) -> None:

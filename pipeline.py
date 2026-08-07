@@ -246,6 +246,7 @@ def run_pipeline(*, stop_after_stage: int | None = None):
         return (input_cost + output_cost).quantize(Decimal("0.000001"))
 
     timings["total"] = time.perf_counter() - total_started
+    run_pipeline.last_health = _compute_health(submission, settings.workspace_dir)
     run_pipeline.last_timings = timings
     run_pipeline.last_usage = usage_totals
     run_pipeline.last_cost_usd = {
@@ -254,6 +255,67 @@ def run_pipeline(*, stop_after_stage: int | None = None):
     }
     _write_json_atomically(settings.workspace_dir / "submission.json", submission)
     return submission
+
+
+def _compute_health(submission: dict, workspace_dir) -> dict[str, int]:
+    """Post-hoc health signals from the final submission + workspace state.
+
+    Ground truth is not available on the private-set day, so we pick
+    between runs by these numbers alone:
+      baseline_cells       — how many cells fell through to stage-0 default
+      computed_cells       — total - baseline
+      valid_selections     — scenarios with a saved stage-7 output on disk
+      rejected_scenarios   — scenarios whose stage-7 output landed only in
+                             selections/rejected/ (both retry attempts failed)
+      salvaged_clauses     — soft_warnings across selections that dropped a
+                             specific clause via clause-level salvage
+      retried_selections   — soft_warnings mentioning "accepted on retry"
+      soft_warnings        — total soft_warnings across all saved selections
+    """
+    baseline_cell = {"status": "COMPLIANT", "actual": 0.01, "evidence_txn_id": None}
+    baseline_cells = 0
+    total_cells = 0
+    for clauses in submission["answers"].values():
+        for cell in clauses.values():
+            total_cells += 1
+            snapshot = {
+                "status": cell.get("status"),
+                "actual": cell.get("actual"),
+                "evidence_txn_id": cell.get("evidence_txn_id"),
+            }
+            if snapshot == baseline_cell:
+                baseline_cells += 1
+
+    selections_dir = workspace_dir / "selections"
+    rejected_dir = selections_dir / "rejected"
+    valid_selections = 0
+    salvaged_clauses = 0
+    retried_selections = 0
+    soft_warnings_total = 0
+    if selections_dir.exists():
+        for path in selections_dir.glob("*.json"):
+            valid_selections += 1
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            warnings = payload.get("soft_warnings", []) or []
+            soft_warnings_total += len(warnings)
+            salvaged_clauses += sum(1 for w in warnings if "stage7 salvage" in w)
+            if any("accepted on retry" in w for w in warnings):
+                retried_selections += 1
+    rejected_scenarios = len(list(rejected_dir.glob("*.json"))) if rejected_dir.exists() else 0
+
+    return {
+        "total_cells": total_cells,
+        "baseline_cells": baseline_cells,
+        "computed_cells": total_cells - baseline_cells,
+        "valid_selections": valid_selections,
+        "rejected_scenarios": rejected_scenarios,
+        "salvaged_clauses": salvaged_clauses,
+        "retried_selections": retried_selections,
+        "soft_warnings": soft_warnings_total,
+    }
 
 
 def gap_scan():

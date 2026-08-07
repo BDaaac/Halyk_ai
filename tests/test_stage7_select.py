@@ -148,36 +148,36 @@ def test_stage7_rejects_a_role_that_is_not_a_list_of_transaction_ids(tmp_path):
         )
 
 
-def test_stage7_rejects_uncertain_as_a_substitute_for_a_required_role(tmp_path):
+def test_stage7_salvages_a_clause_with_empty_required_role_and_matching_uncertain(tmp_path):
+    """A semantic error inside one clause must not kill the whole scenario.
+    The offending clause drops to empty; the salvage is recorded in
+    soft_warnings and the pipeline sees {} for that clause downstream."""
     client = FakeClient({
         "6.1": {"revenue": [], "opex": ["TXN-T1-0002"]},
         "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "close match"}],
     })
 
-    with pytest.raises(ValueError, match="6.1/revenue is empty despite uncertain candidates"):
-        select_scenario(
-            scenario_id="T1",
-            extraction=_extraction(),
-            ledger=_ledger(),
-            client=client,
-            cache_dir=tmp_path / "selections",
-        )
+    result = select_scenario(
+        scenario_id="T1",
+        extraction=_extraction(),
+        ledger=_ledger(),
+        client=client,
+        cache_dir=tmp_path / "selections",
+    )
 
-    rejected = json.loads((tmp_path / "selections" / "rejected" / "T1.json").read_text(encoding="utf-8"))
-    assert rejected["usage"] == {"input_tokens": 13, "output_tokens": 5}
-    assert "empty despite uncertain" in rejected["reason"]
-    # Both attempts were made and both landed in the rejected record.
-    assert len(rejected["attempts"]) == 2
-    assert len(client.calls) == 2
+    assert result.output["6.1"] == {}
+    assert any("stage7 salvage" in w and "6.1" in w for w in result.soft_warnings)
+    # A cache file lands for the surviving clauses so run_pipeline does
+    # not re-issue the paid call on the next run.
+    cached = json.loads((tmp_path / "selections" / "T1.json").read_text(encoding="utf-8"))
+    assert cached["output"]["6.1"] == {}
 
 
 def test_stage7_second_attempt_accepted_after_first_shape_failure(tmp_path):
-    """Retry once on schema failure; if the second Sonnet call returns a
-    valid selection, use it and note the recovery in soft_warnings."""
-    first_bad = {
-        "6.1": {"revenue": [], "opex": ["TXN-T1-0002"]},
-        "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "close match"}],
-    }
+    """A schema-level failure (list where a dict is required) triggers a
+    real retry with the error text fed back to the model. If the second
+    call returns a valid selection, use it."""
+    first_bad = {"6.1": [], "uncertain": []}  # 6.1 must be an object, not a list
     second_good = {"6.1": {"revenue": ["TXN-T1-0001"], "opex": ["TXN-T1-0002"]}, "uncertain": []}
     client = QueuedFakeClient([first_bad, second_good])
 
@@ -190,23 +190,21 @@ def test_stage7_second_attempt_accepted_after_first_shape_failure(tmp_path):
     )
 
     assert len(client.calls) == 2
+    # The retry's user prompt carries the validation error verbatim.
+    assert "<repair>" in client.calls[1]["user"]
+    assert "must map roles" in client.calls[1]["user"]
     assert result.output == second_good
     assert any("accepted on retry" in w for w in result.soft_warnings)
-    # The cache reflects the accepted (second) response, not the rejected first.
-    cached = json.loads((tmp_path / "selections" / "T1.json").read_text(encoding="utf-8"))
-    assert cached["output"] == second_good
 
 
-def test_stage7_two_failed_attempts_raise_and_record_both_in_rejected(tmp_path):
-    """When both attempts fail, both raw outputs land in rejected/ so an
-    operator can see what the model really returned."""
-    first_bad = {"6.1": {"revenue": [], "opex": ["TXN-T1-0002"]},
-                 "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "n1"}]}
-    second_bad = {"6.1": {"revenue": [], "opex": ["TXN-T1-0002"]},
-                  "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "n2"}]}
+def test_stage7_two_failed_shape_attempts_raise_and_record_both_in_rejected(tmp_path):
+    """When both attempts return structurally broken output, both raw
+    responses land in rejected/ so an operator can inspect them."""
+    first_bad = {"6.1": ["not-a-dict-1"], "uncertain": []}
+    second_bad = {"6.1": ["not-a-dict-2"], "uncertain": []}
     client = QueuedFakeClient([first_bad, second_bad])
 
-    with pytest.raises(ValueError, match="empty despite uncertain"):
+    with pytest.raises(ValueError, match="must map roles"):
         select_scenario(
             scenario_id="T1",
             extraction=_extraction(),
@@ -217,24 +215,62 @@ def test_stage7_two_failed_attempts_raise_and_record_both_in_rejected(tmp_path):
 
     rejected = json.loads((tmp_path / "selections" / "rejected" / "T1.json").read_text(encoding="utf-8"))
     assert len(rejected["attempts"]) == 2
-    assert rejected["attempts"][0]["output"]["uncertain"][0]["note"] == "n1"
-    assert rejected["attempts"][1]["output"]["uncertain"][0]["note"] == "n2"
+    assert rejected["attempts"][0]["output"]["6.1"] == ["not-a-dict-1"]
+    assert rejected["attempts"][1]["output"]["6.1"] == ["not-a-dict-2"]
 
 
-def test_stage7_rejects_uncertain_transaction_missing_from_its_role(tmp_path):
+def test_stage7_salvages_only_the_clause_the_uncertain_item_blames(tmp_path):
+    """Blame the clause whose role the uncertain item names; other
+    clauses' selections are kept as-is."""
+    extraction = {
+        "covenants": [
+            {"clause_id": "6.1", "role_descriptions": {"revenue": "Revenue", "opex": "Operating maintenance"}},
+            {"clause_id": "6.2", "role_descriptions": {"payroll": "Payroll"}},
+        ],
+        "adjustments": [],
+        "related_parties": {"threshold_percent": "20.0", "entities": []},
+    }
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0001", "description": "Revenue", "amount": 10, "counterparty": "X"},
+        {"txn_id": "TXN-T1-0002", "description": "Payroll", "amount": -4, "counterparty": "Y"},
+        {"txn_id": "TXN-T1-0003", "description": "Salary bonus", "amount": -3, "counterparty": "Z"},
+    ])
+    client = FakeClient({
+        "6.1": {"revenue": ["TXN-T1-0001"], "opex": ["TXN-T1-0002"]},
+        "6.2": {"payroll": ["TXN-T1-0002"]},
+        "uncertain": [{"txn_id": "TXN-T1-0003", "role": "opex", "note": "maybe operational"}],
+    })
+
+    result = select_scenario(
+        scenario_id="T1",
+        extraction=extraction,
+        ledger=ledger,
+        client=client,
+        cache_dir=tmp_path / "selections",
+    )
+
+    # 6.1 owns role "opex" — it is dropped; 6.2 survives untouched.
+    assert result.output["6.1"] == {}
+    assert result.output["6.2"] == {"payroll": ["TXN-T1-0002"]}
+
+
+def test_stage7_uncertain_transaction_missing_from_its_role_salvages_the_clause(tmp_path):
     client = FakeClient({
         "6.1": {"revenue": ["TXN-T1-0001"], "opex": ["TXN-T1-0002"]},
         "uncertain": [{"txn_id": "TXN-T1-0002", "role": "revenue", "note": "close match"}],
     })
 
-    with pytest.raises(ValueError, match="uncertain transaction TXN-T1-0002 is not selected for role revenue"):
-        select_scenario(
-            scenario_id="T1",
-            extraction=_extraction(),
-            ledger=_ledger(),
-            client=client,
-            cache_dir=tmp_path / "selections",
-        )
+    result = select_scenario(
+        scenario_id="T1",
+        extraction=_extraction(),
+        ledger=_ledger(),
+        client=client,
+        cache_dir=tmp_path / "selections",
+    )
+
+    # 6.1 owns 'revenue'; the uncertain item names revenue but the txn
+    # was placed under opex instead — clause 6.1 drops.
+    assert result.output["6.1"] == {}
 
 
 def test_stage7_warns_when_foreign_currency_transaction_is_not_selected(tmp_path):
