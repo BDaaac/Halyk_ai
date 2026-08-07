@@ -35,12 +35,21 @@ def _expr_from_output(raw: dict[str, Any]) -> Expr:
 def _condition_from_output(raw: dict[str, Any] | None) -> Condition | None:
     if not raw or not isinstance(raw.get("expr"), dict):
         return None
-    return Condition(
-        expr=_expr_from_output(raw["expr"]),
-        operator=raw["operator"],
-        threshold=Decimal(str(raw["threshold"])),
-        raw_text=str(raw.get("raw_text", "")),
-    )
+    try:
+        return Condition(
+            expr=_expr_from_output(raw["expr"]),
+            operator=raw["operator"],
+            threshold=Decimal(str(raw["threshold"])),
+            raw_text=str(raw.get("raw_text", "")),
+        )
+    except (InvalidOperation, ValueError, KeyError):
+        # Haiku sometimes emits a hallucinated applicability whose
+        # threshold is a date range or free-form text ('2025-01-01 to
+        # 2025-12-31'). Treat such conditions as absent instead of
+        # collapsing the whole scenario setup — a covenant that really
+        # depended on the condition would already have failed the regex
+        # guard in stage 6.
+        return None
 
 
 def specifications_from_extraction(scenario_id: str, extraction: dict[str, Any]) -> dict[str, CovenantSpec]:

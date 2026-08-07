@@ -169,6 +169,29 @@ def test_stage8_amount_correction_without_accepted_field_is_applied():
     assert selection["taxes"] == [Decimal("402118.64"), Decimal("486204.19")]
 
 
+def test_stage8_ignores_hallucinated_condition_with_non_numeric_threshold():
+    """Haiku sometimes emits an applicability whose threshold is free text
+    ('2025-01-01 to 2025-12-31'). Treat the condition as absent instead
+    of taking down the whole scenario setup."""
+    extraction = {
+        "covenants": [{
+            "clause_id": "6.1",
+            "value_expr": {"op": "sum", "role": "revenue"},
+            "operator": ">=",
+            "threshold": "1000",
+            "applicability": {
+                "expr": {"op": "fact", "fact_name": "covenant_period"},
+                "operator": "==",
+                "threshold": "2025-01-01 to 2025-12-31",  # not a Decimal
+            },
+        }],
+    }
+    specs = specifications_from_extraction("T1", extraction)
+
+    assert "6.1" in specs
+    assert specs["6.1"].applicability is None
+
+
 def test_stage8_nan_amount_raises_labelled_error_naming_txn_and_role():
     """A NaN that no correction covered must produce a message the
     operator can actually act on — not a bare Decimal InvalidOperation."""

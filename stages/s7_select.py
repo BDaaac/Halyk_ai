@@ -266,10 +266,15 @@ def select_scenario(
                 extraction=extraction,
             ),
         )
-    except ValueError as error:
+    except (ValueError, AttributeError, TypeError, KeyError) as error:
+        # Sonnet occasionally returns lists where dicts are expected inside
+        # nested structures (e.g. an entities list of strings). Widening
+        # the catch means the raw output lands in rejected/ for later
+        # inspection instead of silently propagating and forcing a paid
+        # retry on the next run_pipeline invocation.
         _write_cache(
             cache_dir / "rejected" / f"{scenario_id}.json",
-            {"output": response.output, "usage": response.usage, "reason": str(error)},
+            {"output": response.output, "usage": response.usage, "reason": f"{type(error).__name__}: {error}"},
         )
         raise
     _write_cache(cache_path, {"output": result.output, "usage": result.usage, "soft_warnings": result.soft_warnings})
