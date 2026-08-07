@@ -136,9 +136,11 @@ def test_docs_without_account_are_not_candidates(tmp_path):
     assert fake.calls == []
 
 
-def test_borrower_name_mention_pulls_a_group_report_into_candidates(tmp_path):
-    """Consolidated / third-party docs have no ACC but do mention the
-    borrower name. They must reach the LLM classifier."""
+def test_consolidated_report_about_a_borrower_reaches_the_classifier(tmp_path):
+    """Group-level audits carry no ACC but they do mention a borrower name
+    together with the 'consolidated financial statements' marker. Bare
+    name mention was too loose (internal borrower memos also start with
+    the borrower name), so we require both signals together."""
     kyc = DocRecord(
         doc_id="kyc-1",
         text="Организация: Aktau Port Services JSC\nСчёт ACC-7801\nДосье «Знай своего клиента»",
@@ -151,10 +153,10 @@ def test_borrower_name_mention_pulls_a_group_report_into_candidates(tmp_path):
     group_report = DocRecord(
         doc_id="group-report",
         text=("CONSOLIDATED ANNUAL REPORT · SARYBEL ENERGY HOLDING JSC. Independent Auditor's Report. "
-              "The Group's operations include Aktau Port Services JSC as a subsidiary operating under "
-              "long-term concession arrangements..."),
+              "We have audited the consolidated financial statements of Sarybel Energy Holding JSC and its "
+              "subsidiaries. The Group's operations include Aktau Port Services JSC as a subsidiary."),
         extraction_method="text",
-        account_ids=[],  # no ACC — the whole point of this test
+        account_ids=[],
         mentioned_txn_ids=[],
         version_status="active",
         doc_type="noise",
@@ -166,3 +168,37 @@ def test_borrower_name_mention_pulls_a_group_report_into_candidates(tmp_path):
 
     assert group_report.doc_type == "aup"
     assert len(fake.calls) == 1
+
+
+def test_borrower_memo_without_consolidated_marker_is_not_a_candidate(tmp_path):
+    """The public set has 124 internal borrower memos that mention the
+    borrower name in their header (project status reports, IT manuals,
+    onboarding checklists). Without the consolidated marker they must
+    stay 'noise' — flooding them into the classifier costs money and
+    trips the safety brake."""
+    kyc = DocRecord(
+        doc_id="kyc-1",
+        text="Организация: Aktau Port Services JSC\nСчёт ACC-7801",
+        extraction_method="text",
+        account_ids=["ACC-7801"],
+        mentioned_txn_ids=[],
+        version_status="active",
+        doc_type="kyc",
+    )
+    memo = DocRecord(
+        doc_id="internal-memo",
+        text=("Aktau Port Services JSC · Q1 2025 · Внутренний · Отчёт о статусе проекта. "
+              "Общий статус: жёлтый. Aktau Port Services JSC подчёркивает риски по срокам..."),
+        extraction_method="text",
+        account_ids=[],
+        mentioned_txn_ids=[],
+        version_status="active",
+        doc_type="noise",
+    )
+    records = {"kyc-1": kyc, "memo": memo}
+    fake = FakeClient({"doc_type": "kyc", "version_status": "active"})
+
+    doc_classify.apply_llm_fallback(records, _settings(tmp_path), client_factory=lambda: fake)
+
+    assert memo.doc_type == "noise"
+    assert fake.calls == []

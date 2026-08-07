@@ -26,12 +26,13 @@ from models import DocRecord
 
 
 # Cap on documents that reach the LLM classifier in a single run.
-# On the public set the OR-with-name-mention rule surfaces ~140 candidates,
-# nearly all of which end up as ``noise``; the first cold run pays ~$0.09
-# once and every subsequent run reads workspace/doctypes/ for free. The
-# threshold exists to catch a corpus-wide encoding failure that would
-# otherwise fire hundreds of API calls with no useful signal.
-MAX_LLM_CANDIDATES = 200
+# Kept at 40 because the candidate rule (below) is narrow: on the public
+# set the acc-based rule surfaces 18 docs and the extended
+# consolidated-plus-name rule adds exactly one (a5cc1400b640). The
+# threshold has to stay lower than the realistic candidate count to be a
+# meaningful safety brake against a corpus-wide encoding failure that
+# would produce hundreds of candidates.
+MAX_LLM_CANDIDATES = 40
 TEXT_EXCERPT_CHARS = 1500
 
 ALLOWED_DOC_TYPES = ("agreement", "kyc", "aup", "audit_notes", "noise")
@@ -145,8 +146,19 @@ def _harvest_borrower_names(records: Iterable[DocRecord]) -> set[str]:
     return names
 
 
-def _mentions_any_borrower(text: str, names: set[str]) -> bool:
-    if not names:
+def _is_consolidated_about_borrower(text: str, names: set[str]) -> bool:
+    """Consolidated group audit that also mentions one of our borrowers.
+
+    Bare name mention was too loose: on the public set 124 internal
+    borrower memos (weekly status reports, IT manuals, employee onboarding
+    checklists) also start with the borrower's own name and would flood
+    the classifier without adding useful signal. Requiring the
+    'consolidated financial statements / annual report / statement of'
+    marker narrows the extra candidates to actual group-level audit docs.
+    """
+    from lib.consolidated_retrieval import CONSOLIDATED_MARKER_RE
+
+    if not names or CONSOLIDATED_MARKER_RE.search(text) is None:
         return False
     collapsed = re.sub(r"\s+", " ", text)
     return any(name in collapsed for name in names)
@@ -161,17 +173,17 @@ def apply_llm_fallback(
     """Route unnamed borrower documents through the LLM classifier.
 
     A candidate is any doc the regex triage returned as ``noise`` that
-    either carries an ``ACC-XXXX`` (a borrower's own paperwork) OR mentions
-    one of the borrower names harvested from active KYCs (group-level
-    reports and third-party docs about the borrower — like the
-    consolidated ``a5cc1400b640`` audit that has no ACC of its own).
+    either carries an ``ACC-XXXX`` (a borrower's own paperwork) OR is a
+    consolidated group report that mentions one of our borrower names
+    (the group's audit of the subsidiary is relevant even though the
+    document has no ACC of its own — see ``a5cc1400b640``).
     """
     borrower_names = _harvest_borrower_names(records.values())
     candidates = [
         record
         for record in records.values()
         if record.doc_type == "noise"
-        and (record.account_ids or _mentions_any_borrower(record.text, borrower_names))
+        and (record.account_ids or _is_consolidated_about_borrower(record.text, borrower_names))
     ]
     if not candidates:
         return
