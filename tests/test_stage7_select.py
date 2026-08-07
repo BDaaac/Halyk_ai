@@ -19,6 +19,21 @@ class FakeClient:
         return StructuredResult(output=self.output, usage={"input_tokens": 13, "output_tokens": 5})
 
 
+class QueuedFakeClient:
+    """Return a pre-scripted sequence of outputs across successive calls."""
+
+    def __init__(self, outputs):
+        self.outputs = list(outputs)
+        self.calls = []
+
+    def create_structured_message(self, **kwargs):
+        from lib.anthropic_client import StructuredResult
+
+        self.calls.append(kwargs)
+        output = self.outputs.pop(0)
+        return StructuredResult(output=output, usage={"input_tokens": 13, "output_tokens": 5})
+
+
 def _ledger():
     return pd.DataFrame(
         [
@@ -151,6 +166,59 @@ def test_stage7_rejects_uncertain_as_a_substitute_for_a_required_role(tmp_path):
     rejected = json.loads((tmp_path / "selections" / "rejected" / "T1.json").read_text(encoding="utf-8"))
     assert rejected["usage"] == {"input_tokens": 13, "output_tokens": 5}
     assert "empty despite uncertain" in rejected["reason"]
+    # Both attempts were made and both landed in the rejected record.
+    assert len(rejected["attempts"]) == 2
+    assert len(client.calls) == 2
+
+
+def test_stage7_second_attempt_accepted_after_first_shape_failure(tmp_path):
+    """Retry once on schema failure; if the second Sonnet call returns a
+    valid selection, use it and note the recovery in soft_warnings."""
+    first_bad = {
+        "6.1": {"revenue": [], "opex": ["TXN-T1-0002"]},
+        "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "close match"}],
+    }
+    second_good = {"6.1": {"revenue": ["TXN-T1-0001"], "opex": ["TXN-T1-0002"]}, "uncertain": []}
+    client = QueuedFakeClient([first_bad, second_good])
+
+    result = select_scenario(
+        scenario_id="T1",
+        extraction=_extraction(),
+        ledger=_ledger(),
+        client=client,
+        cache_dir=tmp_path / "selections",
+    )
+
+    assert len(client.calls) == 2
+    assert result.output == second_good
+    assert any("accepted on retry" in w for w in result.soft_warnings)
+    # The cache reflects the accepted (second) response, not the rejected first.
+    cached = json.loads((tmp_path / "selections" / "T1.json").read_text(encoding="utf-8"))
+    assert cached["output"] == second_good
+
+
+def test_stage7_two_failed_attempts_raise_and_record_both_in_rejected(tmp_path):
+    """When both attempts fail, both raw outputs land in rejected/ so an
+    operator can see what the model really returned."""
+    first_bad = {"6.1": {"revenue": [], "opex": ["TXN-T1-0002"]},
+                 "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "n1"}]}
+    second_bad = {"6.1": {"revenue": [], "opex": ["TXN-T1-0002"]},
+                  "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "n2"}]}
+    client = QueuedFakeClient([first_bad, second_bad])
+
+    with pytest.raises(ValueError, match="empty despite uncertain"):
+        select_scenario(
+            scenario_id="T1",
+            extraction=_extraction(),
+            ledger=_ledger(),
+            client=client,
+            cache_dir=tmp_path / "selections",
+        )
+
+    rejected = json.loads((tmp_path / "selections" / "rejected" / "T1.json").read_text(encoding="utf-8"))
+    assert len(rejected["attempts"]) == 2
+    assert rejected["attempts"][0]["output"]["uncertain"][0]["note"] == "n1"
+    assert rejected["attempts"][1]["output"]["uncertain"][0]["note"] == "n2"
 
 
 def test_stage7_rejects_uncertain_transaction_missing_from_its_role(tmp_path):

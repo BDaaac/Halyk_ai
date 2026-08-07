@@ -246,36 +246,59 @@ def select_scenario(
         reject_uncertain_substitution(cached["output"], extraction)
         output, warnings = apply_deterministic_guards(output=cached["output"], ledger=prompt_ledger, extraction=extraction)
         return SelectionResult(output=output, usage=cached["usage"], soft_warnings=cached["soft_warnings"] + warnings)
-    response = client.create_structured_message(
-        system=PROMPT_PATH.read_text(encoding="utf-8"),
-        user=build_context(extraction=extraction, ledger=prompt_ledger),
-        tool_name="emit_selection",
-        input_schema=selection_schema(extraction),
-    )
-    try:
-        validate_selection_shape(response.output)
-        reject_uncertain_substitution(response.output, extraction)
-        output, guard_warnings = apply_deterministic_guards(output=response.output, ledger=prompt_ledger, extraction=extraction)
+
+    # Sonnet is sampled (temperature not fixed at 0 — Sonnet-5 rejects the
+    # parameter), so a shape-rejected first call usually returns a clean
+    # structure on the second try. One retry catches the bulk of stage-7
+    # instability that otherwise drops a scenario to baseline.
+    attempts: list[dict[str, Any]] = []
+    last_response = None
+    last_error: Exception | None = None
+    for attempt in range(2):
+        response = client.create_structured_message(
+            system=PROMPT_PATH.read_text(encoding="utf-8"),
+            user=build_context(extraction=extraction, ledger=prompt_ledger),
+            tool_name="emit_selection",
+            input_schema=selection_schema(extraction),
+        )
+        last_response = response
+        try:
+            validate_selection_shape(response.output)
+            reject_uncertain_substitution(response.output, extraction)
+            output, guard_warnings = apply_deterministic_guards(
+                output=response.output, ledger=prompt_ledger, extraction=extraction
+            )
+        except (ValueError, AttributeError, TypeError, KeyError) as error:
+            attempts.append({"output": response.output, "error": f"{type(error).__name__}: {error}"})
+            last_error = error
+            continue
+
+        retry_note: list[str] = []
+        if attempts:
+            retry_note.append(f"stage7 accepted on retry after: {attempts[0]['error']}")
         result = SelectionResult(
             output=output,
             usage=response.usage,
-            soft_warnings=guard_warnings + validate_selection(
+            soft_warnings=retry_note
+            + guard_warnings
+            + validate_selection(
                 scenario_id=scenario_id,
                 output=output,
                 ledger=validation_ledger,
                 extraction=extraction,
             ),
         )
-    except (ValueError, AttributeError, TypeError, KeyError) as error:
-        # Sonnet occasionally returns lists where dicts are expected inside
-        # nested structures (e.g. an entities list of strings). Widening
-        # the catch means the raw output lands in rejected/ for later
-        # inspection instead of silently propagating and forcing a paid
-        # retry on the next run_pipeline invocation.
-        _write_cache(
-            cache_dir / "rejected" / f"{scenario_id}.json",
-            {"output": response.output, "usage": response.usage, "reason": f"{type(error).__name__}: {error}"},
-        )
-        raise
-    _write_cache(cache_path, {"output": result.output, "usage": result.usage, "soft_warnings": result.soft_warnings})
-    return result
+        _write_cache(cache_path, {"output": result.output, "usage": result.usage, "soft_warnings": result.soft_warnings})
+        return result
+
+    # Both attempts failed. Persist raw output(s) for inspection and re-raise.
+    _write_cache(
+        cache_dir / "rejected" / f"{scenario_id}.json",
+        {
+            "output": last_response.output if last_response is not None else None,
+            "usage": last_response.usage if last_response is not None else None,
+            "reason": f"{type(last_error).__name__}: {last_error}" if last_error else "unknown",
+            "attempts": attempts,
+        },
+    )
+    raise last_error  # type: ignore[misc]
