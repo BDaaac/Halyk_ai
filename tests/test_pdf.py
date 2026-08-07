@@ -30,3 +30,19 @@ def test_normalization_preserves_non_identifier_prose():
     source = "ﬁнансовые условия не меняются без согласия сторон"
 
     assert normalize_identifiers(source) == source
+
+
+def test_version_status_recognises_english_draft_and_superseded_markers():
+    """Private-set documents may carry English draft/superseded notes;
+    the triage must not silently classify them as active."""
+    from stages.s2_pdf import _version_status
+
+    assert _version_status("DRAFT — not for distribution") == "draft"
+    assert _version_status("Working draft, pending sign-off") == "draft"
+    assert _version_status("This report is NOT FINAL and may be revised") == "draft"
+    assert _version_status("Preliminary version, subject to review") == "draft"
+    assert _version_status("This edition is superseded by the 2025 revision") == "superseded"
+    assert _version_status("Replaced by the final report dated 2025-12-31") == "superseded"
+    assert _version_status("This procedure is no longer in effect") == "superseded"
+    # Plain active document is unaffected.
+    assert _version_status("Final report as at 31 December 2025") == "active"

@@ -48,12 +48,18 @@ DRAFT_PATTERNS = (
     r"промежуточная\s+ведомость",
     r"заменена\s+окончательным\s+отч[её]том",
     r"\bdraft\b",
+    r"\bnot\s+final\b",
+    r"\bworking\s+(?:draft|copy)\b",
+    r"\bpreliminary\s+version\b",
 )
 SUPERSEDED_PATTERNS = (
     r"недействующая\s+редакция",
     r"не\s+применяется",
     r"утратил\s+силу",
     r"\bsuperseded\b",
+    r"\bsuperseded\s+by\b",
+    r"\breplaced\s+by\b",
+    r"\bno\s+longer\s+(?:in\s+)?(?:effect|effective)\b",
 )
 
 

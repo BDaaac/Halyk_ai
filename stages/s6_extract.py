@@ -111,6 +111,68 @@ def _clause_text(article: str, clause_id: str) -> str:
     return article[marker.start() : end]
 
 
+# Regex families for regex_guards. Kept as module-level tuples so the
+# bilingual coverage can be grep-ed and extended in one place, and so
+# tests can assert against them without stringifying the guard function.
+
+LOWER_BOUND_PATTERNS = (
+    # Russian
+    r"не\s+допуск\w+\s+снижен",
+    r"не\s+менее",
+    r"не\s+ниже",
+    # English
+    r"not\s+(?:be\s+)?less\s+than",
+    r"\bat\s+least\b",
+    r"shall\s+not\s+(?:permit\s+.{0,40}\s+to\s+)?fall\s+below",
+    r"shall\s+maintain\s+.{0,40}of\s+(?:not\s+)?(?:less\s+than\s+)?",
+    r"minimum\s+of",
+)
+UPPER_BOUND_PATTERNS = (
+    # Russian
+    r"не\s+должн\w+\s+превыш",
+    r"не\s+более",
+    r"не\s+выше",
+    r"не\s+превышал",
+    # English
+    r"shall\s+not\s+exceed",
+    r"\bnot\s+(?:exceed|more\s+than)\b",
+    r"\bno\s+greater\s+than\b",
+    r"\bno\s+more\s+than\b",
+    r"maximum\s+of",
+)
+MAX_NODE_PATTERNS = (
+    # Russian
+    r"наибольш",
+    # English
+    r"\bgreater\s+of\b",
+    r"\bhigher\s+of\b",
+    r"not\s+a\s+metric",
+    r"\bseparately\b",
+)
+APPLICABILITY_PATTERNS = (
+    # Russian
+    r"только\s+при\s+условии",
+    r"применяется,?\s+если",
+    # English
+    r"only\s+(?:if|when)",
+    r"provided\s+that",
+    r"subject\s+to",
+    r"applies\s+only\s+(?:if|when)",
+)
+EXCEPTION_PATTERNS = (
+    # Russian
+    r"за\s+исключением\s+случаев",
+    # English
+    r"\bexcept\s+(?:as\s+.{0,40}\s+)?agreed\s+in\s+writing",
+    r"unless\s+otherwise",
+    r"\bexcept\b",
+)
+
+
+def _any_match(patterns: tuple[str, ...], text: str) -> bool:
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+
+
 def regex_guards(output: dict[str, Any], article: str) -> list[str]:
     """Flag deterministic disagreements; never change the model output."""
     warnings: list[str] = []
@@ -121,15 +183,15 @@ def regex_guards(output: dict[str, Any], article: str) -> list[str]:
                 raise DerivedRoleError(f"{role} is a derived metric and must be expressed as a tree")
         clause = _clause_text(article, clause_id).lower()
         operator = covenant.get("operator")
-        if re.search(r"не\s+(?:допуск\w+\s+снижен|менее|ниже)|not\s+less", clause) and operator != ">=":
+        if _any_match(LOWER_BOUND_PATTERNS, clause) and operator != ">=":
             warnings.append(f"{clause_id}: operator disagrees with lower-bound clause")
-        if re.search(r"не\s+(?:должн\w+\s+превыш|более|выше|превышал)|not\s+(?:exceed|more\s+than)", clause) and operator != "<=":
+        if _any_match(UPPER_BOUND_PATTERNS, clause) and operator != "<=":
             warnings.append(f"{clause_id}: operator disagrees with upper-bound clause")
-        if re.search(r"наибольш|not\s+a\s+metric|separately", clause, re.IGNORECASE) and not _contains_op(covenant.get("value_expr"), "max"):
+        if _any_match(MAX_NODE_PATTERNS, clause) and not _contains_op(covenant.get("value_expr"), "max"):
             warnings.append(f"{clause_id}: max is expected by the clause")
-        if re.search(r"только\s+при\s+условии|применяется,?\s+если|only\s+(?:if|when)", clause) and covenant.get("applicability") is None:
+        if _any_match(APPLICABILITY_PATTERNS, clause) and covenant.get("applicability") is None:
             warnings.append(f"{clause_id}: applicability condition is missing")
-        if re.search(r"за\s+исключением\s+случаев|except", clause) and covenant.get("exception") is None:
+        if _any_match(EXCEPTION_PATTERNS, clause) and covenant.get("exception") is None:
             warnings.append(f"{clause_id}: exception condition is missing")
         threshold = str(covenant.get("threshold", "")).replace(",", "")
         if threshold and threshold not in clause.replace(",", ""):
