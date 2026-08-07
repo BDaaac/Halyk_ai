@@ -39,8 +39,10 @@ def run_pipeline(*, stop_after_stage: int | None = None):
 
     started = time.perf_counter()
     ledger = _read_ledger()
-    template = json.loads((settings.data_dir / "submission_template.json").read_text(encoding="utf-8"))
-    submission = deepcopy(template)
+    # baseline was written to disk by stage 0 with COMPLIANT/0.01/null in every
+    # cell; use it as the working submission so any unfilled cell keeps that
+    # safety-net value instead of reverting to the template's nulls.
+    submission = deepcopy(baseline)
 
     from lib.consolidated_retrieval import patch_group_capex
 

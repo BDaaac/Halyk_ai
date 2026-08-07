@@ -314,6 +314,29 @@ def test_pipeline_survives_missing_extraction():
             assert "actual" in cell
 
 
+def test_failed_scenario_keeps_baseline_not_nulls(monkeypatch, tmp_path):
+    """A scenario whose extraction fails must keep stage-0 baseline values."""
+    from config import get_settings
+
+    settings = get_settings()
+    extraction = settings.workspace_dir / "extractions" / "B1.json"
+    selection = settings.workspace_dir / "selections" / "B1.json"
+    extraction_backup = extraction.with_suffix(".json.backup")
+    selection_backup = selection.with_suffix(".json.backup")
+    extraction.rename(extraction_backup)
+    selection.rename(selection_backup)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    try:
+        submission = run_pipeline()
+    finally:
+        extraction_backup.rename(extraction)
+        selection_backup.rename(selection)
+    for clause_id, cell in submission["answers"]["B1"].items():
+        assert cell["status"] == "COMPLIANT", f"B1 {clause_id} status collapsed to {cell['status']}"
+        assert cell["actual"] == 0.01, f"B1 {clause_id} actual collapsed to {cell['actual']}"
+        assert cell["evidence_txn_id"] is None
+
+
 def test_actual_always_positive_two_decimals():
     for clauses in run_pipeline()["answers"].values():
         for cell in clauses.values():
