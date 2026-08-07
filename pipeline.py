@@ -70,6 +70,13 @@ def run_pipeline(*, stop_after_stage: int | None = None):
 
     stage_2_started = time.perf_counter()
     document_index = build_document_index()
+    # Level-2 doc-type classification: fires only for docs the regex triage
+    # returned as ``noise`` yet still carry an ``ACC-XXXX`` marker. Cached in
+    # workspace/doctypes/; no-op when ANTHROPIC_API_KEY is empty. The
+    # candidate count is capped by lib.doc_classify.MAX_LLM_CANDIDATES to
+    # protect against a whole-corpus encoding failure on a private set.
+    from lib.doc_classify import apply_llm_fallback
+    apply_llm_fallback(document_index, settings)
     timings: dict[str, float] = {"stage_2_pdf": time.perf_counter() - stage_2_started}
     usage_totals: dict[str, dict[str, int]] = {
         "stage_6_extract": {"input_tokens": 0, "output_tokens": 0, "calls": 0},

@@ -3,13 +3,62 @@ from config import get_settings
 from lib.pdf import extract_text
 from lib.text import normalize_identifiers
 from models import DocRecord
+
 ACC = re.compile(r"ACC-\d{4}")
 TXN = re.compile(r"TXN-[A-Z0-9]+-\d+")
 AR = re.compile(r"AR-\d{4}-\d{4}")
 OWN_REPORT = re.compile(
-    r"\u043d\u043e\u043c\u0435\u0440\s+(?:\u0437\u0430\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f|\u043e\u0442\u0447[\u0435\u0451]\u0442\u0430|\u0432\u0435\u0434\u043e\u043c\u043e\u0441\u0442\u0438)\s*(AR-\d{4}-\d{4})",
+    r"номер\s+(?:заключения|отч[её]та|ведомости)\s*(AR-\d{4}-\d{4})",
     re.IGNORECASE,
 )
+
+
+# Type markers. Order matters: audit_notes is checked before agreement, because
+# audit notes reference the loan they audit. KYC and AUP markers are tight so a
+# procedure manual that merely mentions "KYC" or "AUP" does not steal the type.
+AUDIT_NOTES_PATTERNS = (
+    # A CP1251-mangled run can split words: "аудитор ское дело". Keep the
+    # tolerance the original regex had.
+    r"аудитор\s*ское\s+дело",
+    r"\baudit\s+notes?\b",
+    r"\baudit\s+work[- ]?papers?\b",
+)
+AGREEMENT_PATTERNS = (
+    r"договор\s+банковского\s+займа",
+    r"кредитн\w+\s+(?:договор|соглашени)",
+    r"договор\s+займа",
+    r"\bloan\s+agreement\b",
+)
+KYC_PATTERNS = (
+    # Real KYC files quote «Знай своего клиента» in the header. Compliance
+    # procedure manuals mention "KYC" without this exact phrase, so it filters
+    # the two apart.
+    r"знай\s+свое\w*\s+клиент",
+    r"надлежащая\s+проверка\s+клиент",
+    r"customer\s+due\s+diligence",
+    r"kyc\s+(?:dossier|file|record)",
+)
+AUP_PATTERNS = (
+    r"отч[её]т\s+о\s+выполнении\s+согласованных\s+процедур",
+    r"agreed[-\s]upon\s+procedures",
+)
+
+# Version markers.
+DRAFT_PATTERNS = (
+    r"промежуточная\s+ведомость",
+    r"заменена\s+окончательным\s+отч[её]том",
+    r"\bdraft\b",
+)
+SUPERSEDED_PATTERNS = (
+    r"недействующая\s+редакция",
+    r"не\s+применяется",
+    r"утратил\s+силу",
+    r"\bsuperseded\b",
+)
+
+
+def _any(patterns: tuple[str, ...], text: str) -> bool:
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
 
 
 def decode_legacy_pdf_text(text: str) -> str:
@@ -24,32 +73,31 @@ def decode_legacy_pdf_text(text: str) -> str:
 
 
 def _version_status(text: str) -> str:
-    lower = text.lower()
-    if re.search(r"\u043f\u0440\u043e\u043c\u0435\u0436\u0443\u0442\u043e\u0447\u043d\u0430\u044f\s+\u0432\u0435\u0434\u043e\u043c\u043e\u0441\u0442\u044c", lower) or re.search(
-        r"\u0437\u0430\u043c\u0435\u043d\u0435\u043d\u0430\s+\u043e\u043a\u043e\u043d\u0447\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u043c\s+\u043e\u0442\u0447[\u0435\u0451]\u0442\u043e\u043c", lower
-    ):
+    if _any(DRAFT_PATTERNS, text):
         return "draft"
-    if re.search(r"\u043d\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0443\u044e\u0449\u0430\u044f\s+\u0440\u0435\u0434\u0430\u043a\u0446\u0438\u044f|\u043d\u0435\s+\u043f\u0440\u0438\u043c\u0435\u043d\u044f\u0435\u0442\u0441\u044f", lower):
+    if _any(SUPERSEDED_PATTERNS, text):
         return "superseded"
     return "active"
 
 
 def _document_type(text: str, report_number: str | None) -> str:
-    lower = text.lower()
-    if re.search(r"\u0430\u0443\u0434\u0438\u0442\u043e\u0440\s*\u0441\u043a\u043e\u0435\s+\u0434\u0435\u043b\u043e", lower):
+    if _any(AUDIT_NOTES_PATTERNS, text):
         return "audit_notes"
-    if re.search(r"\u0434\u043e\u0433\u043e\u0432\u043e\u0440\s+\u0431\u0430\u043d\u043a\u043e\u0432\u0441\u043a\u043e\u0433\u043e\s+\u0437\u0430\u0439\u043c\u0430", lower):
+    if _any(AGREEMENT_PATTERNS, text):
         return "agreement"
-    if re.search(r"\u0437\u043d\u0430\u0439\s+\u0441\u0432\u043e\u0435\u0433\u043e\s+\u043a\u043b\u0438\u0435\u043d\u0442\s*\u0430", lower):
+    if _any(KYC_PATTERNS, text):
         return "kyc"
-    if report_number and re.search(r"\u043e\u0442\u0447[\u0435\u0451]\u0442\s+\u043e\s+\u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0438\s+\u0441\u043e\u0433\u043b\u0430\u0441\u043e\u0432\u0430\u043d\u043d\u044b\u0445\s+\u043f\u0440\u043e\u0446\u0435\u0434\u0443\u0440", lower):
+    if report_number and _any(AUP_PATTERNS, text):
         return "aup"
     return "noise"
 
 
 def run(state=None):
-    records={}
-    for path in get_settings().data_dir.joinpath('documents').glob('*.pdf'):
+    """Regex-only triage. LLM fallback for unnamed borrower docs is applied
+    separately from run_pipeline via lib.doc_classify.apply_llm_fallback so
+    that unit tests calling build_document_index() do not fire the API."""
+    records: dict[str, DocRecord] = {}
+    for path in get_settings().data_dir.joinpath("documents").glob("*.pdf"):
         raw_text, method = extract_text(path)
         text = normalize_identifiers(decode_legacy_pdf_text(raw_text))
         own_match = OWN_REPORT.search(text)
