@@ -19,12 +19,19 @@ import json
 import os
 import tempfile
 from pathlib import Path
+import re
 from typing import Any, Iterable
 
 from models import DocRecord
 
 
-MAX_LLM_CANDIDATES = 40
+# Cap on documents that reach the LLM classifier in a single run.
+# On the public set the OR-with-name-mention rule surfaces ~140 candidates,
+# nearly all of which end up as ``noise``; the first cold run pays ~$0.09
+# once and every subsequent run reads workspace/doctypes/ for free. The
+# threshold exists to catch a corpus-wide encoding failure that would
+# otherwise fire hundreds of API calls with no useful signal.
+MAX_LLM_CANDIDATES = 200
 TEXT_EXCERPT_CHARS = 1500
 
 ALLOWED_DOC_TYPES = ("agreement", "kyc", "aup", "audit_notes", "noise")
@@ -122,17 +129,49 @@ def _existing_types_by_account(records: Iterable[DocRecord]) -> dict[str, set[st
     return claims
 
 
+def _harvest_borrower_names(records: Iterable[DocRecord]) -> set[str]:
+    """Names harvested from active KYC dossiers via the borrower-name regex
+    shared with consolidated retrieval. Used to bring group-level documents
+    (which carry no ACC-XXXX) into the LLM-classification candidate pool."""
+    from lib.consolidated_retrieval import borrower_name
+
+    names: set[str] = set()
+    for record in records:
+        if record.doc_type != "kyc" or record.version_status != "active":
+            continue
+        name = borrower_name(record.text)
+        if name:
+            names.add(name)
+    return names
+
+
+def _mentions_any_borrower(text: str, names: set[str]) -> bool:
+    if not names:
+        return False
+    collapsed = re.sub(r"\s+", " ", text)
+    return any(name in collapsed for name in names)
+
+
 def apply_llm_fallback(
     records: dict[str, DocRecord],
     settings: Any,
     *,
     client_factory: Any = None,
 ) -> None:
-    """Route noise-with-ACC documents through the LLM classifier."""
+    """Route unnamed borrower documents through the LLM classifier.
+
+    A candidate is any doc the regex triage returned as ``noise`` that
+    either carries an ``ACC-XXXX`` (a borrower's own paperwork) OR mentions
+    one of the borrower names harvested from active KYCs (group-level
+    reports and third-party docs about the borrower — like the
+    consolidated ``a5cc1400b640`` audit that has no ACC of its own).
+    """
+    borrower_names = _harvest_borrower_names(records.values())
     candidates = [
         record
         for record in records.values()
-        if record.doc_type == "noise" and record.account_ids
+        if record.doc_type == "noise"
+        and (record.account_ids or _mentions_any_borrower(record.text, borrower_names))
     ]
     if not candidates:
         return
@@ -174,17 +213,19 @@ def apply_llm_fallback(
         # Do not clobber an already-classified active document of the same
         # account: two active KYCs (or two agreements) would confuse
         # resolve_documents, which just picks index 0. Safer to keep the
-        # candidate as noise than to overwrite silently.
-        if new_type != "noise" and new_status == "active":
-            existing = claims.get(record.account_ids[0], set())
+        # candidate as noise than to overwrite silently. Name-only
+        # candidates have no ACC and cannot conflict at all.
+        if new_type != "noise" and new_status == "active" and record.account_ids:
+            account = record.account_ids[0]
+            existing = claims.get(account, set())
             if new_type in existing:
                 _log(
                     settings.workspace_dir,
                     f"{record.doc_id}: LLM said {new_type} but account "
-                    f"{record.account_ids[0]} already has an active {new_type}; kept as noise",
+                    f"{account} already has an active {new_type}; kept as noise",
                 )
                 continue
-            claims.setdefault(record.account_ids[0], set()).add(new_type)
+            claims.setdefault(account, set()).add(new_type)
 
         record.doc_type = new_type
         record.version_status = new_status

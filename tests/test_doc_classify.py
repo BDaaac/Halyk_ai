@@ -134,3 +134,35 @@ def test_docs_without_account_are_not_candidates(tmp_path):
 
     assert record.doc_type == "noise"
     assert fake.calls == []
+
+
+def test_borrower_name_mention_pulls_a_group_report_into_candidates(tmp_path):
+    """Consolidated / third-party docs have no ACC but do mention the
+    borrower name. They must reach the LLM classifier."""
+    kyc = DocRecord(
+        doc_id="kyc-1",
+        text="Организация: Aktau Port Services JSC\nСчёт ACC-7801\nДосье «Знай своего клиента»",
+        extraction_method="text",
+        account_ids=["ACC-7801"],
+        mentioned_txn_ids=[],
+        version_status="active",
+        doc_type="kyc",
+    )
+    group_report = DocRecord(
+        doc_id="group-report",
+        text=("CONSOLIDATED ANNUAL REPORT · SARYBEL ENERGY HOLDING JSC. Independent Auditor's Report. "
+              "The Group's operations include Aktau Port Services JSC as a subsidiary operating under "
+              "long-term concession arrangements..."),
+        extraction_method="text",
+        account_ids=[],  # no ACC — the whole point of this test
+        mentioned_txn_ids=[],
+        version_status="active",
+        doc_type="noise",
+    )
+    records = {"kyc-1": kyc, "group-report": group_report}
+    fake = FakeClient({"doc_type": "aup", "version_status": "active"})
+
+    doc_classify.apply_llm_fallback(records, _settings(tmp_path), client_factory=lambda: fake)
+
+    assert group_report.doc_type == "aup"
+    assert len(fake.calls) == 1
