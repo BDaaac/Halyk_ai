@@ -1,6 +1,6 @@
 """Стадия 8: расчёт фактического значения и статуса ковенанта."""
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
 import pandas as pd
@@ -45,11 +45,18 @@ def _condition_from_output(raw: dict[str, Any] | None) -> Condition | None:
 
 def specifications_from_extraction(scenario_id: str, extraction: dict[str, Any]) -> dict[str, CovenantSpec]:
     specifications: dict[str, CovenantSpec] = {}
-    facts = {
-        str(fact["fact_name"]): Decimal(str(fact["value"]))
-        for fact in extraction.get("document_facts", [])
-        if fact.get("value") is not None
-    }
+    facts: dict[str, Decimal] = {}
+    for fact in extraction.get("document_facts", []):
+        if fact.get("value") is None:
+            continue
+        try:
+            facts[str(fact["fact_name"])] = Decimal(str(fact["value"]))
+        except InvalidOperation:
+            # Haiku occasionally emits a placeholder string instead of a
+            # number in a document_fact. Skip such facts so one bad entry
+            # does not sink the whole scenario; a covenant that actually
+            # needs that fact will fail cleanly later.
+            continue
     for covenant in extraction.get("covenants", []):
         clause_id = str(covenant["clause_id"])
         specifications[clause_id] = CovenantSpec(
