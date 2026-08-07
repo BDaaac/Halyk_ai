@@ -29,6 +29,8 @@ def run_pipeline(*, stop_after_stage: int | None = None):
         return baseline
 
     from stages.s0_baseline import _write_json_atomically
+    from stages.s6_extract import extract_scenario
+    from stages.s7_select import select_scenario
     from stages.s8_compute import build_clause_selection, evaluate_covenant, specifications_from_extraction
     from stages.s9_evidence import (
         counterfactual_kind,
@@ -36,8 +38,9 @@ def run_pipeline(*, stop_after_stage: int | None = None):
         find_counterfactual_evidence,
         reverted_adjustments,
     )
+    from lib.anthropic_client import AnthropicClient
 
-    started = time.perf_counter()
+    total_started = time.perf_counter()
     ledger = _read_ledger()
     # baseline was written to disk by stage 0 with COMPLIANT/0.01/null in every
     # cell; use it as the working submission so any unfilled cell keeps that
@@ -46,7 +49,28 @@ def run_pipeline(*, stop_after_stage: int | None = None):
 
     from lib.consolidated_retrieval import patch_group_capex
 
+    stage_2_started = time.perf_counter()
     document_index = build_document_index()
+    timings: dict[str, float] = {"stage_2_pdf": time.perf_counter() - stage_2_started}
+    usage_totals: dict[str, dict[str, int]] = {
+        "stage_6_extract": {"input_tokens": 0, "output_tokens": 0, "calls": 0},
+        "stage_7_select": {"input_tokens": 0, "output_tokens": 0, "calls": 0},
+    }
+
+    def _extra_documents(scenario_id: str, documents_) -> list[str]:
+        """Noise docs mentioning this scenario's missing-amount transactions."""
+        missing_series = ledger.loc[ledger["amount"].isna(), "txn_id"].astype(str)
+        scenario_missing = [txn for txn in missing_series if txn.startswith(f"TXN-{scenario_id}-")]
+        if not scenario_missing:
+            return []
+        own_ids = {documents_.agreement, documents_.kyc, documents_.aup_report, documents_.audit_notes} - {None}
+        hits: list[str] = []
+        for doc_id, record in document_index.items():
+            if doc_id in own_ids:
+                continue
+            if any(txn in record.mentioned_txn_ids for txn in scenario_missing):
+                hits.append(doc_id)
+        return hits
 
     errors_path = settings.workspace_dir / "errors.log"
     errors_path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,7 +100,61 @@ def run_pipeline(*, stop_after_stage: int | None = None):
         extraction_path = settings.workspace_dir / "extractions" / f"{scenario_id}.json"
         selection_path = settings.workspace_dir / "selections" / f"{scenario_id}.json"
         if not extraction_path.exists() or not selection_path.exists():
+            if not settings.anthropic_api_key:
+                log_error(
+                    f"{scenario_id} extract/select",
+                    RuntimeError("ANTHROPIC_API_KEY missing; scenario stays at baseline"),
+                )
+                continue
+            try:
+                documents = resolve_documents(scenario_id)
+                document_texts = {doc_id: record.text for doc_id, record in document_index.items()}
+                if not extraction_path.exists():
+                    extract_client = AnthropicClient(
+                        api_key=settings.anthropic_api_key,
+                        model=settings.extract_model,
+                        timeout_seconds=settings.llm_timeout_seconds,
+                    )
+                    started_extract = time.perf_counter()
+                    extract_result = extract_scenario(
+                        scenario_id=scenario_id,
+                        documents=documents,
+                        document_texts=document_texts,
+                        clause_ids=list(clauses.keys()),
+                        client=extract_client,
+                        cache_dir=settings.workspace_dir / "extractions",
+                        extra_documents=_extra_documents(scenario_id, documents),
+                    )
+                    timings["stage_6_extract"] = timings.get("stage_6_extract", 0.0) + (time.perf_counter() - started_extract)
+                    usage_totals["stage_6_extract"]["input_tokens"] += extract_result.usage.get("input_tokens", 0)
+                    usage_totals["stage_6_extract"]["output_tokens"] += extract_result.usage.get("output_tokens", 0)
+                    usage_totals["stage_6_extract"]["calls"] += 1
+                if not selection_path.exists():
+                    select_client = AnthropicClient(
+                        api_key=settings.anthropic_api_key,
+                        model=settings.select_model,
+                        timeout_seconds=settings.llm_timeout_seconds,
+                    )
+                    extraction_for_select = json.loads(extraction_path.read_text(encoding="utf-8"))["output"]
+                    started_select = time.perf_counter()
+                    select_result = select_scenario(
+                        scenario_id=scenario_id,
+                        extraction=extraction_for_select,
+                        ledger=ledger,
+                        client=select_client,
+                        cache_dir=settings.workspace_dir / "selections",
+                        select_mode=settings.select_mode,
+                    )
+                    timings["stage_7_select"] = timings.get("stage_7_select", 0.0) + (time.perf_counter() - started_select)
+                    usage_totals["stage_7_select"]["input_tokens"] += select_result.usage.get("input_tokens", 0)
+                    usage_totals["stage_7_select"]["output_tokens"] += select_result.usage.get("output_tokens", 0)
+                    usage_totals["stage_7_select"]["calls"] += 1
+            except Exception as error:
+                log_error(f"{scenario_id} extract/select", error)
+                continue
+        if not extraction_path.exists() or not selection_path.exists():
             continue
+        started_compute = time.perf_counter()
         try:
             extraction = json.loads(extraction_path.read_text(encoding="utf-8"))["output"]
             selection = json.loads(selection_path.read_text(encoding="utf-8"))["output"]
@@ -130,8 +208,23 @@ def run_pipeline(*, stop_after_stage: int | None = None):
             except Exception as error:
                 log_error(f"{scenario_id} {clause_id}", error)
                 continue
+        timings["stage_8_9"] = timings.get("stage_8_9", 0.0) + (time.perf_counter() - started_compute)
 
-    run_pipeline.last_timings = {"stage_8_9": time.perf_counter() - started}
+    def _stage_cost(stage: str, pricing) -> Decimal:
+        if pricing is None:
+            return Decimal("0")
+        totals = usage_totals[stage]
+        input_cost = pricing.input_usd_per_mtok * Decimal(totals["input_tokens"]) / Decimal(1_000_000)
+        output_cost = pricing.output_usd_per_mtok * Decimal(totals["output_tokens"]) / Decimal(1_000_000)
+        return (input_cost + output_cost).quantize(Decimal("0.000001"))
+
+    timings["total"] = time.perf_counter() - total_started
+    run_pipeline.last_timings = timings
+    run_pipeline.last_usage = usage_totals
+    run_pipeline.last_cost_usd = {
+        "stage_6_extract": _stage_cost("stage_6_extract", settings.extract_pricing),
+        "stage_7_select": _stage_cost("stage_7_select", settings.select_pricing),
+    }
     _write_json_atomically(settings.workspace_dir / "submission.json", submission)
     return submission
 

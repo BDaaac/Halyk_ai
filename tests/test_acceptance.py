@@ -294,10 +294,13 @@ def test_evidence_belongs_to_scenario():
                 assert cell["evidence_txn_id"].split("-")[1] == scenario_id
 
 
-def test_pipeline_survives_missing_extraction():
+def test_pipeline_survives_missing_extraction(monkeypatch):
     """A single missing cache file must not break the whole submission."""
     from config import get_settings
 
+    # Force the LLM path off so this test never hits the live API when the
+    # orchestrator now auto-fills missing cache via extract_scenario.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     settings = get_settings()
     extraction = settings.workspace_dir / "extractions" / "B1.json"
     backup = extraction.with_suffix(".json.backup")
@@ -305,6 +308,8 @@ def test_pipeline_survives_missing_extraction():
     try:
         submission = run_pipeline()
     finally:
+        if extraction.exists():
+            extraction.unlink()
         backup.rename(extraction)
     template = json.loads((FIXTURES / "submission_template.json").read_text(encoding="utf-8"))
     assert set(submission["answers"]) == set(template["answers"])
@@ -314,21 +319,25 @@ def test_pipeline_survives_missing_extraction():
             assert "actual" in cell
 
 
-def test_failed_scenario_keeps_baseline_not_nulls(monkeypatch, tmp_path):
+def test_failed_scenario_keeps_baseline_not_nulls(monkeypatch):
     """A scenario whose extraction fails must keep stage-0 baseline values."""
     from config import get_settings
 
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     settings = get_settings()
     extraction = settings.workspace_dir / "extractions" / "B1.json"
     selection = settings.workspace_dir / "selections" / "B1.json"
-    extraction_backup = extraction.with_suffix(".json.backup")
-    selection_backup = selection.with_suffix(".json.backup")
+    extraction_backup = extraction.with_suffix(".json.backup2")
+    selection_backup = selection.with_suffix(".json.backup2")
     extraction.rename(extraction_backup)
     selection.rename(selection_backup)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     try:
         submission = run_pipeline()
     finally:
+        if extraction.exists():
+            extraction.unlink()
+        if selection.exists():
+            selection.unlink()
         extraction_backup.rename(extraction)
         selection_backup.rename(selection)
     for clause_id, cell in submission["answers"]["B1"].items():

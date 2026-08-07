@@ -2,6 +2,9 @@
 
 import argparse
 import json
+import os
+import shutil
+from decimal import Decimal
 from pathlib import Path
 
 from pipeline import run_pipeline
@@ -20,6 +23,47 @@ def eval_command() -> None:
     raise NotImplementedError("eval requires stage 0")
 
 
+def _drop_llm_caches(workspace_dir: Path) -> None:
+    """Delete stage-6/7 caches so the next run re-issues LLM calls.
+
+    The vision cache is intentionally preserved: vision responses are
+    deterministic per page image and re-issuing them only burns money.
+    """
+    for name in ("extractions", "selections"):
+        target = workspace_dir / name
+        if target.exists():
+            shutil.rmtree(target)
+
+
+def run_command(*, fresh: bool, data_dir: str | None) -> None:
+    if data_dir:
+        os.environ["DATA_DIR"] = data_dir
+    from config import get_settings
+
+    settings = get_settings()
+    if fresh:
+        _drop_llm_caches(settings.workspace_dir)
+    run_pipeline()
+    timings = getattr(run_pipeline, "last_timings", {}) or {}
+    usage = getattr(run_pipeline, "last_usage", {}) or {}
+    cost = getattr(run_pipeline, "last_cost_usd", {}) or {}
+    if timings or usage or cost:
+        print("timings (seconds):")
+        for stage, value in sorted(timings.items()):
+            print(f"  {stage}: {value:.2f}")
+        for stage in ("stage_6_extract", "stage_7_select"):
+            totals = usage.get(stage, {})
+            if totals.get("calls"):
+                stage_cost = cost.get(stage, Decimal("0"))
+                print(
+                    f"{stage}: calls={totals['calls']} "
+                    f"input={totals['input_tokens']} output={totals['output_tokens']} "
+                    f"cost=${stage_cost}"
+                )
+        total_cost = sum(cost.values(), Decimal("0"))
+        print(f"llm cost total: ${total_cost}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Проверка кредитных ковенантов")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -27,7 +71,18 @@ def main() -> None:
     score = commands.add_parser("score", help="оценить готовый submission")
     score.add_argument("submission", type=Path)
     score.add_argument("ground_truth", type=Path)
-    commands.add_parser("run", help="запустить пайплайн")
+    run = commands.add_parser("run", help="запустить пайплайн")
+    run.add_argument(
+        "--fresh",
+        action="store_true",
+        help="удалить workspace/extractions и workspace/selections перед запуском (vision-кэш сохраняется)",
+    )
+    run.add_argument(
+        "--data",
+        type=str,
+        default=None,
+        help="путь к папке с датасетом (submission_template.json, documents/, master_ledger_2025.csv)",
+    )
     commands.add_parser("eval", help="запустить пайплайн и оценить результат")
     commands.add_parser("diff", help="сравнить два прогона")
 
@@ -35,7 +90,7 @@ def main() -> None:
     if args.command == "score":
         score_command(args.submission, args.ground_truth)
     elif args.command == "run":
-        run_pipeline()
+        run_command(fresh=args.fresh, data_dir=args.data)
     elif args.command == "eval":
         eval_command()
     else:
