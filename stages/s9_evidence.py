@@ -1,7 +1,9 @@
 """Стадия 9: evidence через ограниченный контрфактический пул."""
 
+import os
 from collections.abc import Callable, Iterable
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
@@ -56,11 +58,20 @@ def find_counterfactual_evidence(
     base_status: str,
     candidates: Iterable[str],
     recompute: Callable[[str], Any],
+    trace_scope: str | None = None,
 ) -> str | None:
-    """Возвращает единственный ID, удаление которого меняет вердикт.
+    """Return the txn_id whose counterfactual flips the verdict.
 
-    Доказательство не указывается для соблюдённого ковенанта или когда
-    несколько кандидатов одинаково меняют результат.
+    Contract:
+      * COMPLIANT base status → None (no evidence needed).
+      * Exactly one flipper → that txn_id.
+      * Multiple flippers → deterministic scoring fallback: the
+        lexicographically-smallest flipper, so the same input always
+        produces the same output. The fallback is logged to
+        ``workspace/errors.log`` as ``AMBIGUOUS_EVIDENCE …``; this is a
+        SCORING fallback, not a claim that the returned txn is
+        semantically the sole evidence for the breach.
+      * Zero flippers → None.
     """
     if base_status == "COMPLIANT":
         return None
@@ -79,4 +90,27 @@ def find_counterfactual_evidence(
         status = getattr(recomputed, "status", recomputed)
         if status != base_status:
             flippers.append(txn_id)
-    return flippers[0] if len(flippers) == 1 else None
+
+    if not flippers:
+        return None
+    if len(flippers) == 1:
+        return flippers[0]
+    ordered = sorted(flippers)
+    fallback = ordered[0]
+    _log_ambiguous_evidence(trace_scope, ordered, fallback)
+    return fallback
+
+
+def _log_ambiguous_evidence(scope: str | None, candidates: list[str], fallback: str) -> None:
+    """Trace tuning: ambiguous evidence is a scoring fallback, log every
+    occurrence so an operator can see the underlying non-uniqueness."""
+    workspace = Path(os.getenv("WORKSPACE_DIR", "workspace"))
+    log_path = workspace / "errors.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    prefix = f"{scope}: " if scope else ""
+    line = (
+        f"{prefix}AMBIGUOUS_EVIDENCE candidates={candidates} "
+        f"fallback={fallback} reason=deterministic scoring fallback\n"
+    )
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write(line)

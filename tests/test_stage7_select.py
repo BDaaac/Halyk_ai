@@ -254,6 +254,108 @@ def test_stage7_salvages_only_the_clause_the_uncertain_item_blames(tmp_path):
     assert result.output["6.2"] == {"payroll": ["TXN-T1-0002"]}
 
 
+def test_stage7_semantic_failure_recovered_on_retry(tmp_path):
+    """A semantic per-clause error triggers ONE neutral clause-level retry
+    before salvage. If the retry returns a self-consistent selection, the
+    clause is preserved and the recovery is noted in soft_warnings."""
+    first_bad = {
+        "6.1": {"revenue": [], "opex": ["TXN-T1-0002"]},
+        "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "close match"}],
+    }
+    second_good = {
+        "6.1": {"revenue": ["TXN-T1-0001"], "opex": ["TXN-T1-0002"]},
+        "uncertain": [],
+    }
+    client = QueuedFakeClient([first_bad, second_good])
+
+    result = select_scenario(
+        scenario_id="T1",
+        extraction=_extraction(),
+        ledger=_ledger(),
+        client=client,
+        cache_dir=tmp_path / "selections",
+    )
+
+    assert len(client.calls) == 2
+    # The retry prompt carries the neutral repair note, not an instruction
+    # to include a specific txn.
+    retry_prompt = client.calls[1]["user"]
+    assert "<repair>" in retry_prompt
+    assert "internally inconsistent" in retry_prompt
+    assert "Re-evaluate this clause only" in retry_prompt
+    assert result.output["6.1"] == {"revenue": ["TXN-T1-0001"], "opex": ["TXN-T1-0002"]}
+    assert any("accepted on retry after semantic" in w for w in result.soft_warnings)
+
+
+def test_stage7_direction_mismatch_triggers_semantic_retry(tmp_path):
+    """Selecting a positive (incoming) txn into a role whose description
+    names outgoing payments IS a semantic error. It must route through the
+    same clause-level retry as uncertain-substitution — Python does not
+    decide by itself which txn is correct."""
+    extraction = {
+        "covenants": [{
+            "clause_id": "6.1",
+            "role_descriptions": {
+                "restricted_payment": "Ограниченные платежи в пользу аффилированных лиц",
+            },
+        }],
+        "adjustments": [],
+        "related_parties": {"threshold_percent": "20.0", "entities": []},
+    }
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0001", "description": "Refinery product sales", "amount": 2000000.0, "counterparty": "Some LLP", "currency": "USD"},
+        {"txn_id": "TXN-T1-0002", "description": "Management retainer",     "amount": -100000.0, "counterparty": "Other LLP", "currency": "USD"},
+    ])
+    # Attempt 1: model picked the positive-amount txn → direction mismatch.
+    # Attempt 2: model corrects to the outgoing txn only.
+    first_bad = {"6.1": {"restricted_payment": ["TXN-T1-0001"]}, "uncertain": []}
+    second_good = {"6.1": {"restricted_payment": ["TXN-T1-0002"]}, "uncertain": []}
+    client = QueuedFakeClient([first_bad, second_good])
+
+    result = select_scenario(
+        scenario_id="T1",
+        extraction=extraction,
+        ledger=ledger,
+        client=client,
+        cache_dir=tmp_path / "selections",
+    )
+
+    assert len(client.calls) == 2
+    assert "outgoing payments but selected" in client.calls[1]["user"]
+    assert result.output["6.1"] == {"restricted_payment": ["TXN-T1-0002"]}
+
+
+def test_stage7_direction_mismatch_salvages_if_retry_also_wrong(tmp_path):
+    """When both attempts violate direction, existing salvage applies —
+    Python still does not silently filter the model's selection."""
+    extraction = {
+        "covenants": [{
+            "clause_id": "6.1",
+            "role_descriptions": {
+                "restricted_payment": "Ограниченные платежи в пользу аффилированных лиц",
+            },
+        }],
+        "adjustments": [],
+        "related_parties": {"threshold_percent": "20.0", "entities": []},
+    }
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0001", "description": "Sales", "amount": 2000000.0, "counterparty": "X", "currency": "USD"},
+    ])
+    bad = {"6.1": {"restricted_payment": ["TXN-T1-0001"]}, "uncertain": []}
+    client = QueuedFakeClient([bad, bad])
+
+    result = select_scenario(
+        scenario_id="T1",
+        extraction=extraction,
+        ledger=ledger,
+        client=client,
+        cache_dir=tmp_path / "selections",
+    )
+
+    assert result.output["6.1"] == {}
+    assert any("stage7 salvage" in w and "outgoing" in w for w in result.soft_warnings)
+
+
 def test_stage7_uncertain_transaction_missing_from_its_role_salvages_the_clause(tmp_path):
     client = FakeClient({
         "6.1": {"revenue": ["TXN-T1-0001"], "opex": ["TXN-T1-0002"]},

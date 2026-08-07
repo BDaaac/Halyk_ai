@@ -144,7 +144,11 @@ def test_expression_depth_limit():
         evaluate(_nested_expr(depth=5))
 
 
-def test_evidence_uses_only_a_unique_counterfactual_flipper():
+def test_evidence_returns_flipper_and_falls_back_deterministically(tmp_path, monkeypatch):
+    """Contract: single flipper wins; multiple flippers fall back to the
+    lexicographically-smallest txn_id (scoring fallback, logged); zero
+    flippers still yields None."""
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path))
     finder = getattr(pipeline, "find_counterfactual_evidence", None)
     assert finder is not None, "stage 9 must resolve evidence deterministically"
     statuses = {"TXN-B1-0020": "COMPLIANT", "TXN-B1-0023": "BREACH"}
@@ -158,11 +162,12 @@ def test_evidence_uses_only_a_unique_counterfactual_flipper():
         candidates=list(statuses),
         recompute=lambda txn_id: statuses[txn_id],
     ) is None
+    # Two flippers → deterministic first (lex-min), previously was None.
     assert finder(
         base_status="BREACH",
-        candidates=["TXN-B1-0020", "TXN-B1-0040"],
+        candidates=["TXN-B1-0040", "TXN-B1-0020"],
         recompute=lambda _: "COMPLIANT",
-    ) is None
+    ) == "TXN-B1-0020"
 
 
 def _phase3_contract_types():

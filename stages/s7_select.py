@@ -118,16 +118,58 @@ def validate_selection_shape(output: dict[str, Any]) -> None:
                 raise ValueError(f"{clause_id}/{role} must contain only transaction ID strings")
 
 
-def clause_semantic_errors(output: dict[str, Any], extraction: dict[str, Any]) -> dict[str, str]:
+_DIRECTION_OUTGOING = (
+    r"в\s+пользу",
+    r"paid\s+to",
+    r"payment\s+to",
+    r"payments?\s+to",
+    r"distributed\s+to",
+    r"payable\s+to",
+    r"\boutgoing\b",
+    r"restricted\s+payment",
+    r"дивиденд",
+    r"исходящ",
+)
+_DIRECTION_INCOMING = (
+    r"поступлен",
+    r"receipts?",
+    r"received\s+from",
+    r"\bincoming\b",
+    r"выручк",
+    r"revenue\s+from",
+    r"proceeds\s+from",
+)
+
+
+def _direction_hint(description: str) -> str | None:
+    text = description.lower()
+    if any(re.search(pattern, text) for pattern in _DIRECTION_OUTGOING):
+        return "outgoing"
+    if any(re.search(pattern, text) for pattern in _DIRECTION_INCOMING):
+        return "incoming"
+    return None
+
+
+def clause_semantic_errors(
+    output: dict[str, Any],
+    extraction: dict[str, Any],
+    ledger: pd.DataFrame | None = None,
+) -> dict[str, str]:
     """Per-clause semantic problems that are safe to salvage around.
 
     Returns ``{clause_id: reason}`` for clauses whose selection is
-    self-inconsistent — the model listed a transaction under ``uncertain``
-    for a role that the clause never actually filled, or a required role
-    is empty despite the model itself flagging a candidate for it.
-    Clauses NOT in the returned map are semantically OK; they may still
-    fail shape validation, which is a separate concern (see
-    ``validate_selection_shape``).
+    self-inconsistent:
+      * uncertain-substitution: the model listed a transaction under
+        ``uncertain`` for a role that the clause never actually filled,
+        or a required role is empty despite the model itself flagging a
+        candidate for it;
+      * direction mismatch: the role description names outgoing payments
+        (в пользу / paid to / …) yet a selected txn has amount > 0
+        (income), or vice versa. Python does not decide which txn is
+        right — the mismatch surfaces as a semantic error and travels
+        the same clause-level retry path as uncertain-substitution.
+    Clauses not in the returned map are semantically OK; shape errors
+    are a separate concern (see ``validate_selection_shape``).
     """
     errors: dict[str, str] = {}
     uncertain_items = [
@@ -137,11 +179,10 @@ def clause_semantic_errors(output: dict[str, Any], extraction: dict[str, Any]) -
     ]
     uncertain_roles = {role for _, role in uncertain_items}
 
-    # A clause with role X gets blamed for uncertain[txn, X] if it never
-    # placed that txn into any of its roles. If several clauses share
-    # role X, all of them are blamed — dropping any single one is enough
-    # to unlink the uncertain item, but reporting them jointly makes the
-    # salvage decision transparent in soft_warnings.
+    ledger_amounts: dict[str, Any] = {}
+    if ledger is not None and not ledger.empty:
+        ledger_amounts = dict(zip(ledger["txn_id"].astype(str), ledger["amount"]))
+
     covenants_by_clause = {str(c.get("clause_id")): c for c in extraction.get("covenants", [])}
     for clause_id, covenant in covenants_by_clause.items():
         roles = output.get(clause_id)
@@ -164,6 +205,39 @@ def clause_semantic_errors(output: dict[str, Any], extraction: dict[str, Any]) -
                 continue
             if txn_id not in roles.get(role, []):
                 errors[clause_id] = f"uncertain transaction {txn_id} for role {role!r} was not placed here"
+                break
+        if clause_id in errors:
+            continue
+        # Check 3: direction mismatch (role description names outgoing /
+        # incoming payments but a selected txn has the opposite sign).
+        for role, txn_ids in roles.items():
+            desc = role_descriptions.get(role, "")
+            hint = _direction_hint(desc)
+            if hint is None or not isinstance(txn_ids, list):
+                continue
+            for txn_id in txn_ids:
+                amount = ledger_amounts.get(str(txn_id))
+                if amount is None:
+                    continue
+                try:
+                    amount_value = float(amount)
+                except (TypeError, ValueError):
+                    continue
+                if amount_value != amount_value:  # NaN
+                    continue
+                if hint == "outgoing" and amount_value > 0:
+                    errors[clause_id] = (
+                        f"role {role!r} describes outgoing payments but selected "
+                        f"transaction {txn_id} has positive amount ({amount_value:+.2f})"
+                    )
+                    break
+                if hint == "incoming" and amount_value < 0:
+                    errors[clause_id] = (
+                        f"role {role!r} describes incoming receipts but selected "
+                        f"transaction {txn_id} has negative amount ({amount_value:+.2f})"
+                    )
+                    break
+            if clause_id in errors:
                 break
     return errors
 
@@ -294,23 +368,29 @@ def select_scenario(
 
     prompt_user = build_context(extraction=extraction, ledger=prompt_ledger)
 
-    # Structural / semantic errors are split. Shape errors (list where a
-    # dict was expected, wrong element types) come from a broken model
-    # response and warrant a fresh call with the validation error fed
-    # back to the model. Per-clause semantic errors (an uncertain
-    # transaction the model itself flagged that ended up in no clause)
-    # are salvaged: only the offending clauses are dropped, the rest of
-    # the scenario keeps its answers.
+    # Two failure classes, both bounded to one retry (total ≤ 2 calls):
+    #   * shape errors (validate_selection_shape) — the whole response is
+    #     unusable; retry with the validation error text fed back;
+    #   * per-clause semantic errors (uncertain-substitution, direction
+    #     mismatch) — retry only the offending clauses with a NEUTRAL
+    #     repair note that asks the model to resolve the inconsistency,
+    #     not to make a specific decision about which txn is right.
+    # If the second attempt is still broken, keep the existing salvage
+    # (drop only the still-broken clauses to {}). Python does not decide
+    # which transaction is correct — that stays with the model.
     attempts: list[dict[str, Any]] = []
     last_response = None
+    semantic_retry_used = False
     for attempt in range(2):
         user_prompt = prompt_user
         if attempts:
-            last_error_text = attempts[-1]["error"]
+            last = attempts[-1]
+            error_text = last["error"]
+            repair_note = last.get("repair_note", error_text)
             user_prompt = (
                 prompt_user
                 + "\n\n<repair>Previous output failed validation:\n"
-                + last_error_text
+                + repair_note
                 + "\nReturn a corrected selection. Do not change unrelated clauses.\n</repair>"
             )
         response = client.create_structured_message(
@@ -323,21 +403,36 @@ def select_scenario(
         try:
             validate_selection_shape(response.output)
         except (ValueError, AttributeError, TypeError, KeyError) as error:
-            attempts.append({"output": response.output, "error": f"{type(error).__name__}: {error}"})
+            attempts.append({
+                "output": response.output,
+                "error": f"shape: {type(error).__name__}: {error}",
+                "kind": "shape",
+            })
             continue
 
-        # Shape is fine — proceed to per-clause salvage.
-        salvaged_output, salvage_warnings = _salvage_clauses(response.output, extraction)
+        semantic = clause_semantic_errors(response.output, extraction, prompt_ledger)
+        if semantic and not semantic_retry_used:
+            attempts.append({
+                "output": response.output,
+                "error": "semantic: " + "; ".join(f"{cid}: {reason}" for cid, reason in semantic.items()),
+                "kind": "semantic",
+                "repair_note": _semantic_repair_note(semantic),
+            })
+            semantic_retry_used = True
+            continue
+
+        salvaged_output, salvage_warnings = _salvage_clauses(response.output, extraction, prompt_ledger)
         output, guard_warnings = apply_deterministic_guards(
             output=salvaged_output, ledger=prompt_ledger, extraction=extraction
         )
-        retry_note = (
-            [f"stage7 accepted on retry after: {attempts[0]['error']}"] if attempts else []
-        )
+        retry_notes: list[str] = []
+        for prior in attempts:
+            kind = prior.get("kind", "unknown")
+            retry_notes.append(f"stage7 accepted on retry after {kind}: {prior['error']}")
         result = SelectionResult(
             output=output,
             usage=response.usage,
-            soft_warnings=retry_note
+            soft_warnings=retry_notes
             + salvage_warnings
             + guard_warnings
             + validate_selection(
@@ -364,8 +459,25 @@ def select_scenario(
     raise ValueError(reason)
 
 
+def _semantic_repair_note(errors: dict[str, str]) -> str:
+    """Neutral per-clause repair message. Asks the model to re-evaluate;
+    does not tell it which transaction to include or exclude."""
+    lines: list[str] = []
+    for clause_id, reason in errors.items():
+        lines.append(
+            f"Clause {clause_id} is internally inconsistent: {reason}. "
+            f"Re-evaluate this clause only and return a self-consistent "
+            f"selection. Include the transaction only if the covenant text "
+            f"and transaction support it; otherwise exclude it and resolve "
+            f"the uncertainty consistently."
+        )
+    return "\n".join(lines)
+
+
 def _salvage_clauses(
-    output: dict[str, Any], extraction: dict[str, Any]
+    output: dict[str, Any],
+    extraction: dict[str, Any],
+    ledger: pd.DataFrame | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Return (output_with_broken_clauses_dropped, warnings).
 
@@ -374,7 +486,7 @@ def _salvage_clauses(
     leaves the cell at the stage-0 baseline instead of crashing the
     whole scenario.
     """
-    errors = clause_semantic_errors(output, extraction)
+    errors = clause_semantic_errors(output, extraction, ledger)
     if not errors:
         return output, []
     salvaged = deepcopy(output)

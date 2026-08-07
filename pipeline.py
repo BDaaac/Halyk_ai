@@ -221,6 +221,7 @@ def run_pipeline(*, stop_after_stage: int | None = None):
                     base_status=result.status,
                     candidates=evidence_candidates(selected_roles, adjustments, ledger),
                     recompute=recompute,
+                    trace_scope=f"{scenario_id} {clause_id}",
                 )
                 actual_quantized = float(result.actual.quantize(Decimal("0.01")))
                 if not cell_is_valid(result.status, actual_quantized, evidence, ledger):

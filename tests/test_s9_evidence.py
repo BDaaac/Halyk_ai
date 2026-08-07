@@ -54,3 +54,40 @@ def test_audited_adjustment_uses_revert_not_drop_counterfactual():
 
     assert counterfactual_kind("TXN-T1-0020", adjustments, ledger) == "revert_adjustment"
     assert counterfactual_kind("TXN-T1-0099", adjustments, ledger) == "drop_txn"
+
+
+def test_ambiguous_evidence_returns_deterministic_first(monkeypatch, tmp_path):
+    """When multiple candidates independently flip the verdict, return
+    the lexicographically-smallest txn_id (deterministic scoring
+    fallback), and log the ambiguity to workspace/errors.log."""
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path))
+    # Three candidates, first two flip.
+    flip = {"TXN-T1-0055", "TXN-T1-0011"}
+    def recompute(txn_id):
+        return "COMPLIANT" if txn_id in flip else "BREACH"
+
+    picked = find_counterfactual_evidence(
+        base_status="BREACH",
+        candidates=["TXN-T1-0055", "TXN-T1-0033", "TXN-T1-0011"],
+        recompute=recompute,
+        trace_scope="T1 6.1",
+    )
+    assert picked == "TXN-T1-0011"  # lexicographic min of {0055, 0011}
+
+    log = (tmp_path / "errors.log").read_text(encoding="utf-8")
+    assert "AMBIGUOUS_EVIDENCE" in log
+    assert "TXN-T1-0011" in log
+    assert "TXN-T1-0055" in log
+    assert "fallback=TXN-T1-0011" in log
+    assert "deterministic scoring fallback" in log
+
+
+def test_no_flippers_still_returns_none():
+    def recompute(txn_id):
+        return "BREACH"
+
+    assert find_counterfactual_evidence(
+        base_status="BREACH",
+        candidates=["A", "B"],
+        recompute=recompute,
+    ) is None
