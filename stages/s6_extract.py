@@ -54,7 +54,13 @@ def _article_six(text: str) -> str:
         end = start.end() + following.start() if following else len(text)
         candidates.append(text[start.start() : end])
     with_clauses = [segment for segment in candidates if re.search(r"(?:пункт|clause)\s*6\.\d+", segment, re.IGNORECASE)]
-    return max(with_clauses or candidates, key=len)
+    # If neither an "article 6" nor any of its candidate windows contains a
+    # "clause 6.X" marker, the agreement almost certainly numbers its
+    # covenants under a different heading. Hand the model the whole
+    # document rather than a section that turned out to be empty.
+    if not with_clauses:
+        return text
+    return max(with_clauses, key=len)
 
 
 def build_context(

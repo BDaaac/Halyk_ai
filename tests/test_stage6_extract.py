@@ -44,6 +44,14 @@ def test_article_six_skips_table_of_contents_before_real_clause():
     assert "Пункт 6.1" in _article_six(text)
 
 
+def test_article_six_falls_back_to_full_text_when_no_clauses_inside():
+    """A contract that numbers covenants under a different heading must not
+    send an empty section to the model — the whole text is safer."""
+    text = "Статья 6\nПрочие условия\nСтатья 7\nФинансовые ковенанты\nПункт 7.1 не менее 2.00"
+
+    assert _article_six(text) == text
+
+
 def test_guards_compare_each_covenant_to_its_own_clause():
     article = "Пункт 6.1 не менее 2.00\nПункт 6.2 не более 100.00"
     output = {
