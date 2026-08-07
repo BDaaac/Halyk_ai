@@ -18,6 +18,25 @@ def _read_ledger() -> pd.DataFrame:
     return pd.read_csv(get_settings().data_dir / "master_ledger_2025.csv")
 
 
+def scenario_membership_mask(ledger: pd.DataFrame, scenario_id: str) -> pd.Series:
+    """Boolean mask selecting ledger rows that belong to a scenario.
+
+    The scenario key from the submission template is treated as a
+    delimited token — bounded by non-alphanumeric characters or the
+    ends of the string — inside the txn_id. This tolerates transaction
+    formats other than ``TXN-{scenario}-{n}`` (e.g. ``TX_P1_0001`` or
+    ``TXN-2025-P1-0001``); the only convention we require is that the
+    scenario key appears somewhere as its own token.
+    """
+    pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(scenario_id)}(?![A-Za-z0-9])")
+    return ledger["txn_id"].astype(str).str.contains(pattern, regex=True)
+
+
+def scenario_txn_ids(ledger: pd.DataFrame, scenario_id: str) -> set[str]:
+    """Set of transaction IDs the ledger attributes to a scenario."""
+    return set(ledger.loc[scenario_membership_mask(ledger, scenario_id), "txn_id"].astype(str))
+
+
 def run_pipeline(*, stop_after_stage: int | None = None):
     from stages.s0_baseline import run
 
@@ -59,8 +78,9 @@ def run_pipeline(*, stop_after_stage: int | None = None):
 
     def _extra_documents(scenario_id: str, documents_) -> list[str]:
         """Noise docs mentioning this scenario's missing-amount transactions."""
+        own_txn_ids = scenario_txn_ids(ledger, scenario_id)
         missing_series = ledger.loc[ledger["amount"].isna(), "txn_id"].astype(str)
-        scenario_missing = [txn for txn in missing_series if txn.startswith(f"TXN-{scenario_id}-")]
+        scenario_missing = [txn for txn in missing_series if txn in own_txn_ids]
         if not scenario_missing:
             return []
         own_ids = {documents_.agreement, documents_.kyc, documents_.aup_report, documents_.audit_notes} - {None}
@@ -252,18 +272,39 @@ def read_document_text(doc_id: str):
 
 
 def build_mapping(ledger: pd.DataFrame, *, template: dict) -> dict[str, str]:
-    """Map accounts to the scenario IDs declared by the current template."""
-    targets = set(template["answers"])
-    scoped = ledger.copy()
-    scoped["scenario_id"] = scoped["txn_id"].str.extract(r"^TXN-([^-]+)-", expand=False)
-    scoped = scoped[scoped["scenario_id"].isin(targets)]
-    if scoped.empty and targets:
-        raise ValueError("no ledger transactions match scenario IDs in submission template")
-    grouped = scoped.groupby("account_id")["scenario_id"].agg(lambda ids: sorted(set(ids)))
-    conflicts = {account: ids for account, ids in grouped.items() if len(ids) != 1}
-    if conflicts:
-        raise ValueError(f"account_id maps to multiple scenario_id values: {conflicts}")
-    return {account: scenarios[0] for account, scenarios in grouped.items()}
+    """Map account_id → scenario_id using the template's own keys as tokens.
+
+    For each scenario key from ``submission_template.json`` we look for
+    transactions whose ``txn_id`` contains that key as a delimited token
+    (``scenario_membership_mask``). All such transactions must share a
+    single ``account_id``; the pair goes into the returned mapping.
+
+    This replaces the previous ``^TXN-([^-]+)-`` extraction, which broke
+    on any transaction format other than ``TXN-{scenario}-{n}``. The
+    scenario keys themselves are still required to appear as tokens in
+    the txn_id — that is the sole convention needed for a private
+    dataset to work without code changes.
+    """
+    targets = list(template["answers"])
+    mapping: dict[str, str] = {}
+    for scenario_id in targets:
+        mask = scenario_membership_mask(ledger, scenario_id)
+        accounts = ledger.loc[mask, "account_id"].astype(str).unique().tolist()
+        if not accounts:
+            continue
+        if len(accounts) > 1:
+            raise ValueError(
+                f"scenario {scenario_id} matches multiple account_ids: {accounts}"
+            )
+        account = accounts[0]
+        if account in mapping:
+            raise ValueError(
+                f"account {account} is claimed by scenarios {mapping[account]!r} and {scenario_id!r}"
+            )
+        mapping[account] = scenario_id
+    if not mapping and targets:
+        raise ValueError("no ledger transactions match any scenario key from submission template")
+    return mapping
 
 
 def get_account_to_scenario():

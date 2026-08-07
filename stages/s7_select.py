@@ -21,6 +21,12 @@ from lib.adjustments import resolve_txn_ids
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "stage7_select.md"
 
 
+def _scenario_mask(ledger: pd.DataFrame, scenario_id: str) -> pd.Series:
+    """Rows whose txn_id contains scenario_id as a delimited token."""
+    pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(scenario_id)}(?![A-Za-z0-9])")
+    return ledger["txn_id"].astype(str).str.contains(pattern, regex=True)
+
+
 @dataclass(frozen=True)
 class SelectionResult:
     output: dict[str, Any]
@@ -185,6 +191,7 @@ def apply_deterministic_guards(*, output: dict[str, Any], ledger: pd.DataFrame, 
 
 def validate_selection(*, scenario_id: str, output: dict[str, Any], ledger: pd.DataFrame, extraction: dict[str, Any]) -> list[str]:
     available = set(ledger["txn_id"].astype(str))
+    scenario_ids = set(ledger.loc[_scenario_mask(ledger, scenario_id), "txn_id"].astype(str))
     selected = {txn_id for _, _, txn_ids in _selected_ids(output) for txn_id in txn_ids}
     descriptions = dict(zip(ledger["txn_id"].astype(str), ledger.get("description", pd.Series(dtype=str)).astype(str)))
     role_descriptions = _role_descriptions(extraction)
@@ -197,7 +204,7 @@ def validate_selection(*, scenario_id: str, output: dict[str, Any], ledger: pd.D
         for txn_id in txn_ids:
             if txn_id not in available:
                 raise ValueError(f"selected transaction does not exist in ledger: {txn_id}")
-            if not txn_id.startswith(f"TXN-{scenario_id}-"):
+            if txn_id not in scenario_ids:
                 raise ValueError(f"selected transaction does not belong to scenario {scenario_id}: {txn_id}")
             expected_words = _words(role_descriptions.get(role, role))
             if expected_words and not (_words(descriptions[txn_id]) & expected_words):
@@ -230,7 +237,7 @@ def select_scenario(
     if select_mode != "scenario":
         raise ValueError("only SELECT_MODE=scenario is supported")
     cache_path = cache_dir / f"{scenario_id}.json"
-    scoped_ledger = ledger[ledger["txn_id"].str.startswith(f"TXN-{scenario_id}-")].reset_index(drop=True)
+    scoped_ledger = ledger[_scenario_mask(ledger, scenario_id)].reset_index(drop=True)
     prompt_ledger = normalize_ledger_to_usd(scoped_ledger, extraction.get("adjustments", []))
     validation_ledger = normalize_ledger_to_usd(ledger, extraction.get("adjustments", []))
     if cache_path.exists():
