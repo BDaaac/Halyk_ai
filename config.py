@@ -28,6 +28,9 @@ class Settings:
     select_mode: str
     extract_pricing: ModelPricing | None
     select_pricing: ModelPricing | None
+    team_name: str
+    contact_email: str
+    submission_model: str
 
 
 def load_dotenv(path: Path, environment: dict[str, str] | None = None) -> None:
@@ -70,4 +73,7 @@ def get_settings() -> Settings:
         select_mode=os.getenv("SELECT_MODE", "scenario"),
         extract_pricing=_stage_pricing("EXTRACT"),
         select_pricing=_stage_pricing("SELECT"),
+        team_name=os.getenv("TEAM_NAME", ""),
+        contact_email=os.getenv("CONTACT_EMAIL", ""),
+        submission_model=os.getenv("SUBMISSION_MODEL", os.getenv("SELECT_MODEL", "")),
     )

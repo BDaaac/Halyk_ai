@@ -75,6 +75,38 @@ def run_command(*, fresh: bool, data_dir: str | None) -> None:
             f"warnings={health.get('soft_warnings', 0)}"
         )
 
+    # Snapshot the run so multiple --fresh invocations are independently
+    # inspectable — the working submission.json is overwritten on every run.
+    _snapshot_run(settings.workspace_dir, health, timings, cost)
+
+
+def _snapshot_run(workspace_dir: Path, health: dict, timings: dict, cost: dict) -> None:
+    from datetime import datetime
+    import shutil as _shutil
+
+    submission = workspace_dir / "submission.json"
+    if not submission.exists():
+        return
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    snap_dir = Path("runs") / stamp
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    _shutil.copy2(submission, snap_dir / "submission.json")
+    payload = {
+        "health": health,
+        "timings_seconds": timings,
+        "cost_usd": {k: str(v) for k, v in cost.items()},
+        "cost_total_usd": str(sum(cost.values(), Decimal("0"))),
+        "recommendation": (
+            "submit" if health.get("baseline_cells", 999) <= 3 and health.get("rejected_scenarios", 999) == 0
+            else "retry"
+        ),
+    }
+    (snap_dir / "health.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(f"snapshot: {snap_dir}")
+
 
 def view_command(*, ground_truth: Path | None, data_dir: str | None, output: Path) -> None:
     """Emit a self-contained HTML trace viewer under reports/."""
