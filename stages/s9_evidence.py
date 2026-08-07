@@ -21,7 +21,7 @@ def evidence_candidates(selected_roles: dict[str, list[str]], adjustments: list[
     adjusted = [
         txn_id
         for adjustment in adjustments
-        if adjustment.get("accepted", False)
+        if adjustment.get("accepted", True) is not False
         for txn_id in resolve_txn_ids(adjustment.get("match", {}), ledger)
     ]
     return list(dict.fromkeys(adjusted or selected))
@@ -46,7 +46,7 @@ def counterfactual_kind(
     produces unrelated flippers and makes deterministic evidence ambiguous.
     """
     for adjustment in adjustments:
-        if adjustment.get("accepted", False) and txn_id in resolve_txn_ids(adjustment.get("match", {}), ledger):
+        if adjustment.get("accepted", True) is not False and txn_id in resolve_txn_ids(adjustment.get("match", {}), ledger):
             return "revert_adjustment"
     return "drop_txn"
 
@@ -69,7 +69,12 @@ def find_counterfactual_evidence(
     for txn_id in dict.fromkeys(candidates):
         try:
             recomputed = recompute(txn_id)
-        except ArithmeticError:
+        except (ArithmeticError, ValueError):
+            # Reverting an amount_correction leaves the ledger row with the
+            # original NaN, so the hard invariant in build_clause_selection
+            # raises ValueError. Treat that as an undefined counterfactual —
+            # the candidate simply doesn't flip the verdict — instead of
+            # bubbling the failure up as if the primary compute broke.
             continue
         status = getattr(recomputed, "status", recomputed)
         if status != base_status:

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 
 from lib.currency import normalize_ledger_to_usd
 from stages.s8_compute import build_clause_selection, evaluate_covenant, specifications_from_extraction
@@ -136,6 +137,57 @@ def test_currency_normalization_converts_audited_fx_before_selection_context():
 
     assert normalized.loc[0, "amount"] == Decimal("-710945.73")
     assert normalized.loc[0, "currency"] == "USD"
+
+
+def test_stage8_amount_correction_without_accepted_field_is_applied():
+    """Haiku sometimes omits 'accepted' on amount_correction — treating that
+    as accepted is the difference between P7 6.1 landing on the truth vs
+    a silent NaN drop to baseline."""
+    extraction = {
+        "covenants": [{
+            "clause_id": "6.1",
+            "value_expr": {"op": "sum", "role": "taxes"},
+            "operator": "<=",
+            "threshold": "1000000",
+            "role_descriptions": {"taxes": "Taxes"},
+        }],
+        "adjustments": [{
+            "type": "amount_correction",
+            "match": {"txn_id": "TXN-T1-0033", "amount": "486204.19", "counterparty": "State Revenue"},
+            "sign": "expense",
+            # NOTE: no 'accepted' field — must be treated as True.
+        }],
+    }
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0010", "amount": Decimal("402118.64"), "counterparty": "Grid", "currency": "USD"},
+        {"txn_id": "TXN-T1-0033", "amount": float("nan"), "counterparty": "State Revenue", "currency": "USD"},
+    ])
+    spec = specifications_from_extraction("T1", extraction)["6.1"]
+
+    selection = build_clause_selection(spec, {"taxes": ["TXN-T1-0010", "TXN-T1-0033"]}, ledger, extraction["adjustments"])
+
+    assert selection["taxes"] == [Decimal("402118.64"), Decimal("486204.19")]
+
+
+def test_stage8_nan_amount_raises_labelled_error_naming_txn_and_role():
+    """A NaN that no correction covered must produce a message the
+    operator can actually act on — not a bare Decimal InvalidOperation."""
+    extraction = {
+        "covenants": [{
+            "clause_id": "6.1",
+            "value_expr": {"op": "sum", "role": "payroll"},
+            "operator": "<=",
+            "threshold": "1000",
+            "role_descriptions": {"payroll": "Payroll"},
+        }],
+    }
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0007", "amount": float("nan"), "counterparty": "Anyone", "currency": "USD"},
+    ])
+    spec = specifications_from_extraction("T1", extraction)["6.1"]
+
+    with pytest.raises(ValueError, match="TXN-T1-0007.*payroll"):
+        build_clause_selection(spec, {"payroll": ["TXN-T1-0007"]}, ledger, [])
 
 
 def test_stage8_evaluates_document_fact_expression():

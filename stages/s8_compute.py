@@ -92,6 +92,41 @@ def _adjustment_txns(adjustment: dict[str, Any], ledger: pd.DataFrame) -> list[s
     return resolve_txn_ids(adjustment.get("match", {}), ledger)
 
 
+def _is_accepted(adjustment: dict[str, Any]) -> bool:
+    """An adjustment is treated as accepted unless the extraction says otherwise.
+
+    Haiku sometimes omits the ``accepted`` field for amount_correction and
+    fx_rate entries (the prompt only tells it to emit the field for
+    reclassifications). Defaulting to ``True`` prevents a silent drop of a
+    correction that is actually in the audit documents; only an explicit
+    ``accepted: false`` — the auditor's own rejection — skips it.
+    """
+    return adjustment.get("accepted", True) is not False
+
+
+def _finite_decimal(raw: Any, *, txn_id: str, role: str) -> Decimal:
+    """Convert a ledger amount to Decimal or raise a labelled ValueError.
+
+    NaN, ``None`` and non-finite values are hard errors — they mean the
+    ledger is missing a value that no adjustment supplied. The caller
+    (run_pipeline) treats the ValueError as a cell-level failure so the
+    baseline cell survives and the operator gets a message that names the
+    exact txn_id and role instead of a Decimal InvalidOperation from deep
+    inside the comparison.
+    """
+    if pd.isna(raw):
+        raise ValueError(f"non-numeric amount for {txn_id!r} in role {role!r}: {raw!r}")
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError) as error:
+        raise ValueError(
+            f"non-numeric amount for {txn_id!r} in role {role!r}: {raw!r}"
+        ) from error
+    if not value.is_finite():
+        raise ValueError(f"non-finite amount for {txn_id!r} in role {role!r}: {raw!r}")
+    return value.copy_abs()
+
+
 def build_clause_selection(
     specification: CovenantSpec,
     selected_ids: dict[str, list[str]],
@@ -101,24 +136,24 @@ def build_clause_selection(
     ledger = normalize_ledger_to_usd(ledger, adjustments)
     amounts = dict(zip(ledger["txn_id"].astype(str), ledger["amount"]))
     for adjustment in adjustments:
-        if adjustment.get("type") != "amount_correction" or not adjustment.get("accepted", False):
+        if adjustment.get("type") != "amount_correction" or not _is_accepted(adjustment):
             continue
         corrected = Decimal(str(adjustment["match"]["amount"])).copy_abs()
         for txn_id in _adjustment_txns(adjustment, ledger):
             amounts[txn_id] = corrected
     selection = {
-        role: [Decimal(str(amounts[txn_id])).copy_abs() for txn_id in selected_ids.get(role, [])]
+        role: [_finite_decimal(amounts[txn_id], txn_id=txn_id, role=role) for txn_id in selected_ids.get(role, [])]
         for role in _roles(specification.value_expr)
     }
     target_roles = _roles(specification.value_expr)
     for adjustment in adjustments:
-        if adjustment.get("type") != "reclassification" or not adjustment.get("accepted", False):
+        if adjustment.get("type") != "reclassification" or not _is_accepted(adjustment):
             continue
         roles = _matching_target_roles(str(adjustment.get("to_role", "")), target_roles)
         for txn_id in _adjustment_txns(adjustment, ledger):
             if txn_id not in amounts:
                 continue
-            value = Decimal(str(amounts[txn_id])).copy_abs()
+            value = _finite_decimal(amounts[txn_id], txn_id=txn_id, role=f"reclass→{adjustment.get('to_role', '?')}")
             for role in roles:
                 selection[role].append(value)
     return selection
