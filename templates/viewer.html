@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Halyk AI Challenge — трассировщик ковенантов</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: ui-monospace, "SF Mono", Consolas, Menlo, monospace;
+         font-size: 13px; background: #0d1117; color: #c9d1d9; padding-bottom: 60px; }
+  header { background: #161b22; border-bottom: 1px solid #30363d; padding: 18px 24px; }
+  h1 { font-size: 18px; color: #58a6ff; }
+  .meta { color: #8b949e; margin-top: 4px; font-size: 12px; }
+  #summary { display: flex; gap: 20px; padding: 14px 24px; background: #161b22;
+             border-bottom: 1px solid #30363d; flex-wrap: wrap; }
+  .stat { min-width: 110px; }
+  .stat .val { font-size: 22px; font-weight: 600; color: #e6edf3; }
+  .stat .lbl { color: #8b949e; font-size: 11px; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .good { color: #3fb950; }
+  .bad { color: #f85149; }
+  .warn { color: #d29922; }
+  main { padding: 20px 24px; }
+  table.grid { border-collapse: separate; border-spacing: 0; width: 100%; max-width: 900px; }
+  .grid th, .grid td { padding: 0; border: 1px solid #30363d; }
+  .grid th { background: #161b22; color: #8b949e; font-weight: 600; font-size: 11px;
+             text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 10px; text-align: center; }
+  .grid td.scenario { background: #161b22; color: #e6edf3; font-weight: 600;
+                      padding: 8px 12px; text-align: center; width: 68px; }
+  .cell { padding: 8px 10px; cursor: pointer; user-select: none; transition: background 0.1s; }
+  .cell:hover { background: #21262d; }
+  .cell .row1 { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .cell .status { font-weight: 600; font-size: 11px; letter-spacing: 0.5px; }
+  .cell .score { font-size: 11px; color: #8b949e; }
+  .cell .actual { color: #c9d1d9; margin-top: 2px; font-size: 12px; }
+  .cell .evidence { color: #8b949e; margin-top: 2px; font-size: 10px; }
+  .cell.match { background: #0e2f1a; }
+  .cell.match .status { color: #3fb950; }
+  .cell.mismatch { background: #3f1a1c; }
+  .cell.mismatch .status { color: #f85149; }
+  .cell.partial { background: #3a2e10; }
+  .cell.partial .status { color: #d29922; }
+  .cell.compliant .status { color: #58a6ff; }
+  .cell.breach .status { color: #d29922; }
+  .cell .lc { color: #d29922; }
+  .cell .missing { color: #8b949e; font-style: italic; }
+  #drilldown { margin-top: 22px; padding: 0; background: #161b22;
+               border: 1px solid #30363d; border-radius: 6px; display: none; }
+  #drilldown.open { display: block; }
+  #drilldown header { background: #0d1117; border-bottom: 1px solid #30363d; }
+  #drilldown h2 { color: #58a6ff; font-size: 16px; }
+  #drilldown .body { padding: 18px 22px; }
+  section { margin-top: 20px; }
+  section:first-child { margin-top: 0; }
+  h3 { color: #8b949e; font-size: 11px; text-transform: uppercase;
+       letter-spacing: 0.5px; margin-bottom: 8px; border-bottom: 1px solid #30363d;
+       padding-bottom: 4px; }
+  .quote { background: #0d1117; padding: 10px 12px; border-left: 3px solid #58a6ff;
+           color: #c9d1d9; margin: 4px 0; white-space: pre-wrap; }
+  .doc-list { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; align-items: baseline; }
+  .doc-list .role { color: #8b949e; }
+  .doc-list .doc-id { color: #79c0ff; font-family: inherit; }
+  .doc-list .title { color: #e6edf3; }
+  .doc-list .badge { display: inline-block; background: #21262d; color: #8b949e;
+                     font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 4px; }
+  .doc-list .badge.draft { background: #3a2e10; color: #d29922; }
+  .doc-list .badge.superseded { background: #4b1113; color: #f85149; }
+  .doc-list .badge.vision { background: #0f2b4b; color: #79c0ff; }
+  table.small { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.small th, table.small td { padding: 6px 8px; border-bottom: 1px solid #21262d;
+                                    text-align: left; vertical-align: top; }
+  table.small th { color: #8b949e; font-weight: 600; font-size: 11px;
+                    text-transform: uppercase; letter-spacing: 0.5px; }
+  table.small td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .formula { background: #0d1117; padding: 10px 12px; border-radius: 4px;
+             font-family: ui-monospace, Consolas, monospace; overflow-x: auto;
+             white-space: pre-wrap; word-break: break-word; margin: 4px 0; }
+  .formula.result { border-left: 3px solid #3fb950; }
+  .adj { background: #0d1117; border-left: 3px solid #d29922;
+         padding: 8px 12px; margin: 8px 0; }
+  .adj .adj-head { color: #e6edf3; font-weight: 600; margin-bottom: 4px; font-size: 12px; }
+  .adj .adj-body { color: #8b949e; font-size: 11px; }
+  .adj.rejected { border-color: #f85149; opacity: 0.75; }
+  .cf { padding: 6px 10px; border-bottom: 1px solid #21262d; display: flex; gap: 10px; }
+  .cf .txn { color: #79c0ff; min-width: 140px; }
+  .cf .kind { color: #8b949e; min-width: 130px; font-size: 11px; }
+  .cf .arrow { color: #8b949e; }
+  .cf .to { color: #e6edf3; }
+  .cf.flipped { background: #0e2f1a; }
+  .cf.flipped .to { color: #3fb950; font-weight: 600; }
+  .empty { color: #8b949e; font-style: italic; padding: 4px 0; }
+  .compare { display: flex; align-items: baseline; gap: 12px; margin-top: 6px; }
+  .compare .actual { font-size: 24px; color: #e6edf3; font-weight: 600; }
+  .compare .op { font-size: 18px; color: #8b949e; }
+  .compare .threshold { font-size: 24px; color: #e6edf3; }
+  .compare .verdict { padding: 4px 12px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+  .compare .verdict.COMPLIANT { background: #0e2f1a; color: #3fb950; }
+  .compare .verdict.BREACH { background: #3f1a1c; color: #f85149; }
+  #close-drill { float: right; cursor: pointer; color: #8b949e; padding: 0 8px; }
+  #close-drill:hover { color: #f85149; }
+  a.docid { color: #79c0ff; text-decoration: none; }
+  a.docid:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<script type="application/json" id="view-data">__VIEW_DATA_PLACEHOLDER__</script>
+
+<header>
+  <h1>Halyk AI Challenge — трассировщик ковенантов</h1>
+  <div class="meta" id="meta"></div>
+</header>
+
+<div id="summary"></div>
+
+<main>
+  <table class="grid" id="grid"></table>
+  <div id="drilldown"><header style="padding:14px 22px"><span id="close-drill" onclick="closeDrill()">✕ закрыть</span><h2 id="drill-title"></h2></header><div class="body" id="drill-body"></div></div>
+</main>
+
+<script>
+const data = JSON.parse(document.getElementById('view-data').textContent);
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function fmt(v) {
+  if (v == null) return '—';
+  if (typeof v === 'number') return v.toLocaleString('en-US', {maximumFractionDigits: 2, minimumFractionDigits: 2});
+  return String(v);
+}
+
+document.getElementById('meta').textContent =
+  `Сгенерировано: ${data.generated_at}  ·  DATA_DIR=${data.data_dir}  ·  WORKSPACE=${data.workspace_dir}` +
+  (data.has_ground_truth ? '' : '  ·  ключа разметки нет — колонка со счётом скрыта');
+
+const s = data.summary || {};
+const chunks = [];
+if (s.mean_score != null) {
+  chunks.push(`<div class="stat"><div class="val ${s.mean_score >= 0.75 ? 'good' : 'warn'}">${s.mean_score.toFixed(4)}</div><div class="lbl">средний балл</div></div>`);
+  chunks.push(`<div class="stat"><div class="val">${s.status_accuracy_pct}%</div><div class="lbl">точность status</div></div>`);
+  chunks.push(`<div class="stat"><div class="val">${s.status_correct}/${s.total_cells}</div><div class="lbl">верных статусов</div></div>`);
+  chunks.push(`<div class="stat"><div class="val">${s.sum_score.toFixed(2)}/${s.total_cells}</div><div class="lbl">сумма</div></div>`);
+}
+if (s.cold_run) {
+  if (s.cold_run.total_time) chunks.push(`<div class="stat"><div class="val">${esc(s.cold_run.total_time.replace(/^total\s+/i, ''))}</div><div class="lbl">время холодного прогона</div></div>`);
+  if (s.cold_run.total_cost) chunks.push(`<div class="stat"><div class="val">${esc(s.cold_run.total_cost)}</div><div class="lbl">расход API</div></div>`);
+}
+if (chunks.length === 0) {
+  chunks.push(`<div class="stat"><div class="val">${s.total_cells || 0}</div><div class="lbl">ячеек</div></div>`);
+}
+document.getElementById('summary').innerHTML = chunks.join('');
+
+// --- Grid ---
+const gridEl = document.getElementById('grid');
+const cluses = data.clauses;
+let head = '<thead><tr><th></th>';
+for (const c of cluses) head += `<th>Пункт ${esc(c)}</th>`;
+head += '</tr></thead>';
+let body = '<tbody>';
+for (const sid of data.scenarios) {
+  body += `<tr><td class="scenario">${esc(sid)}</td>`;
+  for (const cid of cluses) {
+    const cell = (data.cells[sid] || {})[cid];
+    if (!cell) { body += '<td><div class="cell"><span class="missing">нет</span></div></td>'; continue; }
+    let cls = 'cell';
+    if (data.has_ground_truth && cell.truth) {
+      const score = cell.truth.score;
+      if (score >= 1.0) cls += ' match';
+      else if (score >= 0.5) cls += ' partial';
+      else cls += ' mismatch';
+    } else {
+      cls += ' ' + (String(cell.status).toLowerCase() || 'missing');
+    }
+    const scoreLabel = (data.has_ground_truth && cell.truth && cell.truth.score != null)
+      ? `<span class="score">${cell.truth.score.toFixed(2)}</span>` : '';
+    const lc = cell.low_confidence ? '<span class="lc" title="low_confidence">◆</span>' : '';
+    body += `<td><div class="${cls}" onclick="openDrill('${esc(sid)}', '${esc(cid)}')">
+      <div class="row1"><span class="status">${esc(cell.status || '—')} ${lc}</span>${scoreLabel}</div>
+      <div class="actual">actual: ${cell.actual == null ? '—' : fmt(cell.actual)}</div>
+      ${cell.evidence_txn_id ? `<div class="evidence">evidence: ${esc(cell.evidence_txn_id)}</div>` : ''}
+    </div></td>`;
+  }
+  body += '</tr>';
+}
+body += '</tbody>';
+gridEl.innerHTML = head + body;
+
+// --- Drilldown ---
+function docBadges(doc) {
+  if (!doc) return '';
+  const badges = [];
+  if (doc.extraction_method === 'vision') badges.push('<span class="badge vision">vision</span>');
+  if (doc.version_status && doc.version_status !== 'active') badges.push(`<span class="badge ${esc(doc.version_status)}">${esc(doc.version_status)}</span>`);
+  if (doc.doc_type && doc.doc_type !== 'agreement' && doc.doc_type !== 'kyc' && doc.doc_type !== 'aup' && doc.doc_type !== 'audit_notes') {
+    badges.push(`<span class="badge">${esc(doc.doc_type)}</span>`);
+  }
+  return badges.join(' ');
+}
+
+function renderDocs(chain) {
+  if (!chain) return '<div class="empty">цепочка документов не собрана</div>';
+  const rows = [];
+  const roles = [
+    ['agreement', 'agreement'],
+    ['kyc', 'kyc'],
+    ['aup_report', 'aup_report'],
+    ['audit_notes', 'audit_notes'],
+  ];
+  for (const [key, label] of roles) {
+    const doc = chain[key];
+    if (!doc) {
+      rows.push(`<div class="role">${esc(label)}</div><div class="empty">не найден</div>`);
+      continue;
+    }
+    rows.push(`<div class="role">${esc(label)}</div><div><span class="doc-id">${esc(doc.doc_id)}</span> ${docBadges(doc)}<div class="title">${esc(doc.title)}</div></div>`);
+  }
+  let extra = '';
+  if (chain.account_id) extra += `<div class="role">account</div><div><span class="doc-id">${esc(chain.account_id)}</span></div>`;
+  if (chain.report_number) extra += `<div class="role">report #</div><div><span class="doc-id">${esc(chain.report_number)}</span></div>`;
+  let rejected = '';
+  if (chain.rejected && chain.rejected.length) {
+    rejected = '<h3 style="margin-top:16px">отклонённые редакции</h3>';
+    for (const r of chain.rejected) {
+      rejected += `<div class="doc-list" style="margin-bottom:4px"><div class="role">${esc(r.doc_type || '?')}</div><div><span class="doc-id">${esc(r.doc_id)}</span> <span class="badge ${esc(r.version_status)}">${esc(r.version_status)}</span><div class="title">${esc(r.title)}</div></div></div>`;
+    }
+  }
+  return `<div class="doc-list">${extra}${rows.join('')}</div>${rejected}`;
+}
+
+function renderClause(clause) {
+  if (!clause) return '';
+  const app = clause.applicability
+    ? `<div style="margin-top:6px;color:#8b949e">Условие применимости: ${esc(JSON.stringify(clause.applicability))}</div>`
+    : '';
+  const exc = clause.exception
+    ? `<div style="margin-top:6px;color:#8b949e">Исключение: ${esc(JSON.stringify(clause.exception))}</div>`
+    : '';
+  const roles = Object.entries(clause.role_descriptions || {})
+    .map(([r, d]) => `<code style="color:#79c0ff">${esc(r)}</code> — ${esc(d)}`)
+    .join('<br>');
+  return `<div class="quote">${esc(clause.quote)}</div>
+    <div style="margin-top:10px;color:#c9d1d9">Формула: <span class="formula" style="display:inline-block;padding:2px 8px">${esc(clause.expression_source)}</span></div>
+    <div style="margin-top:10px">Роли:<br>${roles}</div>
+    ${app}${exc}`;
+}
+
+function renderAdjustments(adjs) {
+  if (!adjs || !adjs.length) return '<div class="empty">корректировок нет</div>';
+  return adjs.map(adj => {
+    const rejected = adj.accepted === false ? ' rejected' : '';
+    let head = `${esc(adj.type)}`;
+    if (adj.type === 'reclassification') head += `: ${esc(adj.from_role || '?')} → ${esc(adj.to_role || '?')}`;
+    if (adj.type === 'amount_correction') head += `: сумма ${esc(adj.match?.amount || '?')} (${esc(adj.sign || '?')})`;
+    if (adj.type === 'fx_rate') head += `: курс`;
+    if (adj.accepted === false) head += ' — отклонён';
+    const match = adj.match ? [
+      adj.match.txn_id ? `txn=${esc(adj.match.txn_id)}` : '',
+      adj.match.counterparty ? `counterparty=«${esc(adj.match.counterparty)}»` : '',
+    ].filter(Boolean).join(' · ') : '';
+    return `<div class="adj${rejected}">
+      <div class="adj-head">${head}</div>
+      <div class="adj-body">${match ? '<div>' + match + '</div>' : ''}
+        <div>Источник: <span class="doc-id">${esc(adj.source_doc_id || '?')}</span></div>
+        ${adj.source_quote ? `<div class="quote" style="margin-top:6px">${esc(adj.source_quote)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderTransactions(txns) {
+  if (!txns || !txns.length) return '<div class="empty">не выбраны</div>';
+  const rows = txns.map(t => {
+    if (t.missing) return `<tr><td colspan="6" class="warn">${esc(t.txn_id)} — отсутствует в леджере</td></tr>`;
+    const usdDelta = (t.amount_usd != null && t.amount_raw != null && Math.abs(t.amount_usd - t.amount_raw) > 0.005)
+      ? ` <span class="warn">(${t.currency})</span>` : '';
+    return `<tr>
+      <td><code style="color:#79c0ff">${esc(t.txn_id)}</code></td>
+      <td>${esc(t.role)}</td>
+      <td>${esc(t.date)}</td>
+      <td>${esc(t.counterparty)}</td>
+      <td>${esc(t.description)}</td>
+      <td class="num">${fmt(t.amount_raw)}${usdDelta}<br><span style="color:#8b949e">USD: ${fmt(t.amount_usd)}</span></td>
+    </tr>`;
+  }).join('');
+  return `<table class="small">
+    <thead><tr><th>txn_id</th><th>role</th><th>date</th><th>counterparty</th><th>description</th><th class="num">amount</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderCounterfactuals(cfs, evidence) {
+  if (!cfs || !cfs.length) return '<div class="empty">кандидатов нет</div>';
+  return cfs.map(cf => {
+    const flipped = cf.new_status === 'COMPLIANT';
+    const chosen = cf.txn_id === evidence;
+    return `<div class="cf${flipped ? ' flipped' : ''}">
+      <span class="txn">${esc(cf.txn_id)}${chosen ? ' ★' : ''}</span>
+      <span class="kind">${esc(cf.kind)}</span>
+      <span class="arrow">→</span>
+      <span class="to">${esc(cf.new_status || cf.error || '?')}${cf.new_actual != null ? ` · actual=${fmt(cf.new_actual)}` : ''}</span>
+    </div>`;
+  }).join('');
+}
+
+function openDrill(sid, cid) {
+  const cell = ((data.cells[sid] || {})[cid]) || {};
+  document.getElementById('drill-title').textContent = `${sid} · пункт ${cid}`;
+  const chain = cell.documents;
+  const clause = cell.clause;
+  const computed = cell.computed;
+
+  let body = `<section><h3>Ячейка</h3>
+    <div>status: <strong>${esc(cell.status || '—')}</strong>${cell.low_confidence ? ' <span class="lc">◆ low_confidence</span>' : ''} · actual: ${fmt(cell.actual)} · evidence: ${esc(cell.evidence_txn_id || '—')}</div>`;
+  if (data.has_ground_truth && cell.truth) {
+    body += `<div style="margin-top:4px;color:#8b949e">ключ: status=<strong>${esc(cell.truth.status)}</strong> · actual=${fmt(cell.truth.actual)} · evidence=${esc(cell.truth.evidence_txn_id || '—')} · балл=${cell.truth.score != null ? cell.truth.score.toFixed(3) : '—'}</div>`;
+  }
+  body += '</section>';
+
+  body += `<section><h3>Документы</h3>${renderDocs(chain)}</section>`;
+
+  if (clause) {
+    body += `<section><h3>Пункт договора и формула</h3>${renderClause(clause)}</section>`;
+    body += `<section><h3>Корректировки</h3>${renderAdjustments(cell.adjustments)}</section>`;
+    body += `<section><h3>Выбранные транзакции</h3>${renderTransactions(cell.transactions)}</section>`;
+    if (computed) {
+      body += `<section><h3>Подстановка чисел в формулу</h3>
+        <div class="formula">${esc(computed.formula_symbolic)}</div>
+        <div class="formula result">${esc(computed.formula_substituted)} = <strong>${fmt(computed.actual)}</strong></div>
+        <div class="compare">
+          <span class="actual">${fmt(computed.actual)}</span>
+          <span class="op">${esc(computed.operator)}</span>
+          <span class="threshold">${esc(computed.threshold)}</span>
+          <span class="verdict ${esc(computed.status)}">${esc(computed.status)}</span>
+        </div>
+      </section>`;
+    }
+    if (cell.status === 'BREACH' || (cell.counterfactuals && cell.counterfactuals.length)) {
+      body += `<section><h3>Контрфактический перебор кандидатов</h3>
+        ${renderCounterfactuals(cell.counterfactuals, cell.evidence_txn_id)}
+      </section>`;
+    }
+  } else if (cell.chain_missing) {
+    body += `<section><h3>Цепочка недоступна</h3>
+      <div class="empty">extractions/selections для этого сценария не собраны — ячейка на стадии-0 baseline.</div>
+    </section>`;
+  }
+  if (cell.compute_error) {
+    body += `<section><h3>Ошибка расчёта</h3><div class="quote" style="border-left-color:#f85149">${esc(cell.compute_error)}</div></section>`;
+  }
+  document.getElementById('drill-body').innerHTML = body;
+  const drill = document.getElementById('drilldown');
+  drill.classList.add('open');
+  drill.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function closeDrill() {
+  document.getElementById('drilldown').classList.remove('open');
+}
+</script>
+</body>
+</html>

@@ -64,6 +64,26 @@ def run_command(*, fresh: bool, data_dir: str | None) -> None:
         print(f"llm cost total: ${total_cost}")
 
 
+def view_command(*, ground_truth: Path | None, data_dir: str | None, output: Path) -> None:
+    """Emit a self-contained HTML trace viewer under reports/."""
+    if data_dir:
+        os.environ["DATA_DIR"] = data_dir
+    from config import get_settings
+    from lib.viewer import build_view
+
+    settings = get_settings()
+    template_path = Path(__file__).resolve().parent / "templates" / "viewer.html"
+    gt_path = ground_truth if ground_truth and ground_truth.exists() else None
+    output_path = build_view(
+        workspace_dir=settings.workspace_dir,
+        data_dir=settings.data_dir,
+        template_path=template_path,
+        output_path=output,
+        ground_truth_path=gt_path,
+    )
+    print(f"viewer: {output_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Проверка кредитных ковенантов")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -85,6 +105,25 @@ def main() -> None:
     )
     commands.add_parser("eval", help="запустить пайплайн и оценить результат")
     commands.add_parser("diff", help="сравнить два прогона")
+    view = commands.add_parser("view", help="сгенерировать HTML-вьювер трассы")
+    view.add_argument(
+        "--ground-truth",
+        type=Path,
+        default=None,
+        help="путь к ground_truth.json (необязателен — без него колонка со счётом не показывается)",
+    )
+    view.add_argument(
+        "--data",
+        type=str,
+        default=None,
+        help="путь к папке с датасетом (переопределяет DATA_DIR)",
+    )
+    view.add_argument(
+        "--out",
+        type=Path,
+        default=Path("reports") / "view.html",
+        help="куда положить HTML (по умолчанию reports/view.html)",
+    )
 
     args = parser.parse_args()
     if args.command == "score":
@@ -93,6 +132,8 @@ def main() -> None:
         run_command(fresh=args.fresh, data_dir=args.data)
     elif args.command == "eval":
         eval_command()
+    elif args.command == "view":
+        view_command(ground_truth=args.ground_truth, data_dir=args.data, output=args.out)
     else:
         raise NotImplementedError("diff")
 
