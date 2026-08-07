@@ -164,15 +164,20 @@ workspace, свежий `.env`, команда строго из README.
 health: baseline=3/36 computed=33 valid_selections=12 rejected=0 salvaged=3 retried=0 warnings=407
 ```
 
-Проверено на 4 доступных прогонах: `baseline_cells` в одиночку **точно
-ранжирует** прогоны по баллу (4 из 4 совпадений). Планируемая тактика:
+Каждый прогон снимается в `runs/{timestamp}/submission.json` +
+`health.json`; в `health.json` записан ярлык `recommendation`, определяемый
+одной короткой политикой (`main._decide_recommendation`):
 
-- 5–6 `main.py run --fresh` подряд.
-- Каждый прогон снимается в `runs/{timestamp}/submission.json` + `health.json`.
-- **Порог отбраковки: `baseline > 3` или `rejected > 0`** — такой прогон
-  перезапустить. `valid_selections` в критерий отбора не включать: run 2
-  (11/12) и run 4 (12/12) дали одинаковый балл, сигнал недостаточен.
-- Три лучших по `(baseline asc)` загружаются как ответы.
+- `rejected_scenarios > 0` → **`retry`** (сломанный прогон, отбросить).
+- `baseline_cells > 1` → **`retry_if_budget`** (сабмиттируется, но при
+  наличии бюджета имеет смысл ещё один прогон).
+- `baseline_cells <= 1` **и** `rejected_scenarios == 0` → **`good_candidate`**
+  (безопасно грузить).
+
+`retried` и `valid_selections` в жёсткие критерии сейчас не включены:
+на текущей frozen-конфигурации есть только один cold-run замер
+(`baseline=1, retried=4`), делать выводы о ранжировании по этим полям
+рано.
 
 ## Тринадцать стадий
 

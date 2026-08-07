@@ -96,16 +96,33 @@ def _snapshot_run(workspace_dir: Path, health: dict, timings: dict, cost: dict) 
         "timings_seconds": timings,
         "cost_usd": {k: str(v) for k, v in cost.items()},
         "cost_total_usd": str(sum(cost.values(), Decimal("0"))),
-        "recommendation": (
-            "submit" if health.get("baseline_cells", 999) <= 3 and health.get("rejected_scenarios", 999) == 0
-            else "retry"
-        ),
+        "recommendation": _decide_recommendation(health),
     }
     (snap_dir / "health.json").write_text(
         json.dumps(payload, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    print(f"snapshot: {snap_dir}")
+    print(f"snapshot: {snap_dir}  recommendation: {payload['recommendation']}")
+
+
+def _decide_recommendation(health: dict) -> str:
+    """Health-based decision policy for the multi-run submission cycle.
+
+    Contract (kept small on purpose — the current build has only one
+    cold-run datapoint under frozen configuration, so ``retried`` and
+    ``valid_selections`` are not used as hard signals yet):
+
+      rejected > 0        -> "retry"              (broken run, discard)
+      baseline_cells <= 1 -> "good_candidate"     (safe to submit)
+      baseline_cells >  1 -> "retry_if_budget"    (submittable, but try
+                                                   for a cleaner run
+                                                   if API budget permits)
+    """
+    if health.get("rejected_scenarios", 0) > 0:
+        return "retry"
+    if health.get("baseline_cells", 999) <= 1:
+        return "good_candidate"
+    return "retry_if_budget"
 
 
 def view_command(*, ground_truth: Path | None, data_dir: str | None, output: Path) -> None:
