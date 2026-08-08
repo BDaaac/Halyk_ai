@@ -123,41 +123,52 @@ PDF-файлами. `--fresh` удаляет прошлые `workspace/extractio
 формулу и контрфактический перебор кандидатов на evidence. Работает и без
 `ground_truth.json` — тогда колонка со счётом просто не показывается.
 
-## Замеренный холодный прогон на публичном сете (07 августа 2026)
+## Замеры на публичном сете
 
 Данные: `agentic-bank-public/` (12 заёмщиков, 36 ячеек, 200 PDF, 7 vision-страниц).
 
+### Committed-cache reproducibility baseline
+
+Deterministic-прогон на закоммиченных `workspace/{extractions,selections,vision,doctypes}` — API cost $0, воспроизводимо на любой машине.
+
+**Балл: 0.8611** (32 из 36 статусов, sum 31.00/36). `baseline=1, computed=35, rejected=0, salvaged=1, retried=4`.
+
+Эта метрика гарантирована — она детерминистична и не зависит от LLM-стохастичности. Изменение этого числа между чистыми клонами означает регрессию в Stage 8/9 или в закоммиченном кэше.
+
+### Измеренный fresh cold-run (2026-08-09, single stochastic sample)
+
+Из чистого клона в новом каталоге, пустой workspace, `python main.py run --fresh`:
+
 | Стадия               | Время   | Токены (in / out)     | Стоимость |
 |----------------------|---------|-----------------------|-----------|
-| 2 · PDF + vision + doctypes | 80.8 с | 7 vision + 19 doctypes calls | вкл. в total |
-| 6 · extract (Haiku)  | 128.8 с | 110 324 / 16 494      | $0.193    |
-| 7 · select (Sonnet)  |  81.4 с | 130 823 /  3 539 (включая 4 retry) | $0.297    |
-| 8–9 · compute + evidence | 5.9 с | —                | $0        |
-| **всего**            | **297 с (4:58)** |                | **$0.49** (без vision+doctypes ≈ **$0.61** с ними) |
+| 2 · PDF + vision + doctypes | 2.86 с | vision-кэш подгружается | $0        |
+| 6 · extract (Haiku)  | 128.7 с | 110 324 / 16 750      | $0.194    |
+| 7 · select (Sonnet)  |  56.7 с | 130 186 /  3 530      | $0.296    |
+| 8–9 · compute + evidence | 2.0 с | —                | $0        |
+| **всего**            | **190 с (3:11)** |                | **$0.490** |
 
-Замер из чистого клона в новом каталоге (`git clone --local`), пустой
-workspace, свежий `.env`, команда строго из README.
+**Балл: 0.8889** (33 из 36 статусов, sum 32.00/36). `baseline=1, computed=35, rejected=0, salvaged=1, retried=1`.
 
-**Балл на публичном сете (локально): 0.8444** (89 % статусов, 32 из 36 верных).
+> ⚠ **Оговорка.** 0.8889 — **одно** наблюдение fresh-прогона. LLM-стохастичность
+> означает, что повторный `--fresh` может дать иной Stage-6/7 выход и другой
+> итоговый балл. Delta от committed-cache baseline (+0.60 evidence из Stage-9
+> фильтра, +0.28 status из удачной P1 6.1 селекции в этом сэмпле) не гарантирована
+> к повторению. Committed cache — единственный воспроизводимый ориентир.
 
-> ⚠ **Оговорка.** 0.8444 — локальная метрика по формуле CASE §4
-> (`status 0.50 / actual 0.30 / evidence 0.20`, равное усреднение по 36
-> ячейкам). Официальный балл может отличаться из-за неопубликованных
-> difficulty-весов; см. `scripts/loss_report.py` для покомпонентной
-> разбивки потерь.
+Оба балла — локальная метрика по формуле CASE §4 (`status 0.50 / actual 0.30 / evidence 0.20`, равное усреднение по 36 ячейкам). Официальный балл может отличаться из-за неопубликованных difficulty-весов; см. `scripts/loss_report.py` для покомпонентной разбивки потерь.
 
-История балла:
+### История балла
+
 - 4 прогона до `clause-level salvage`: 0.72…0.82, mean 0.77, stdev 0.05.
-- 1 прогон с salvage (без semantic retry / direction guard): 0.8167,
-  `baseline=3/36`, `salvaged=3`.
-- 1 cold-run с semantic retry + direction: **0.8444**, `baseline=1/36`,
-  `retried=4`, `salvaged=1`. Direction-retry исправил B4 6.3 (BREACH →
-  COMPLIANT); ноль ранее корректных ячеек не деградировало.
+- 1 прогон с salvage (без semantic retry / direction guard): 0.8167, `baseline=3/36`, `salvaged=3`.
+- 1 cold-run с semantic retry + direction: 0.8444, `baseline=1/36`, `retried=4`, `salvaged=1`. Direction-retry исправил B4 6.3 (BREACH → COMPLIANT); ноль ранее корректных ячеек не деградировало.
+- **Текущая master (Stage-9 role-relevance evidence filter): 0.8611** committed, 0.8889 measured. Delta +0.60 sum от прежней 0.8444 baseline даёт 3 evidence-фикса (P2/P7/P8 6.3) без изменения status/actual в остальных клетках.
 
-σ = 0.05 замерена до semantic retry / direction guard; на текущей
-сборке диапазон **не переизмерялся**. По внутреннему сигналу
-`baseline=1` и `retried=4` дно должно быть выше прежнего ≈ 0.77 диапазона,
-но это оценка, не измерение.
+σ = 0.05 замерена до semantic retry / direction guard; на текущей сборке диапазон **не переизмерялся** — есть только один Stage-9 fresh-сэмпл.
+
+### Экспериментальная ветка
+
+`origin/experiment/retry-plus-evidence` содержит Stage-9 fix + retry-conservatism поверх frozen master. На committed cache даёт 0.8889 (+0.28 от master 0.8611 за счёт P1 6.1). Retry-conservatism — правило снятия txn из role, если attempt-1 Sonnet флагнул её в `uncertain[]` и не поместил, а retry перевернул. Не смёржена в master: узкий выигрыш на одном public-кейсе, private risk оценён LOW но не измерен.
 
 **P4 6.3: расхождение вызвано опечаткой в исходном договоре** — порог
 загружен как `0.04` вместо `0.045`, подтверждено организаторами 7 августа.
@@ -268,8 +279,13 @@ health: baseline=3/36 computed=33 valid_selections=12 rejected=0 salvaged=3 retr
    значение приходит из отчёта, а не из ленты.
 
 **9. Evidence.** Только для `BREACH`. Ограниченный пул кандидатов и три
-   контрфакта (drop, revert adjustment, flip related-party). Записываем ровно
-   тот `txn_id`, чьё удаление возвращает `COMPLIANT`.
+   контрфакта (drop, revert adjustment, flip related-party). Пул adjustment-
+   кандидатов отфильтрован по релевантности: adjustment попадает в кандидаты
+   только если его `from_role` или `to_role` пересекается с ролями текущей
+   клаузы. Adjustment о `payroll` ничего не говорит о `related_party`-клаузе,
+   поэтому не должен вытеснять real evidence — при отсутствии релевантных
+   adjustment-ов кандидатами становятся selected txns (drop_txn). Записываем
+   ровно тот `txn_id`, чьё удаление возвращает `COMPLIANT`.
 
 **10. Validate.** Разделены `hard` (нарушение → ячейка не записывается,
     остаётся baseline) и `soft` (записывается, помечается `low_confidence`).
@@ -347,12 +363,13 @@ python -m pytest -q                        # Linux / macOS
 .\.venv\Scripts\python.exe -m pytest -q    # Windows
 ```
 
-88 тестов, все зелёные, без обращения к живому API. `tests/conftest.py`
+101 тест, все зелёные, без обращения к живому API. `tests/conftest.py`
 обнуляет `ANTHROPIC_API_KEY` на всю сессию, чтобы ни один тест случайно не
 потратил токены — даже если у разработчика в `.env` лежит настоящий ключ.
 Тесты покрывают, в частности, salvage и repair retry на стадии 7, invariant
-на NaN в стадии 8 и полный набор health-signals — все три механизма выше
-проверены `FakeClient` / `QueuedFakeClient` без единого HTTP-вызова.
+на NaN в стадии 8, role-relevance фильтр evidence-кандидатов на стадии 9
+и полный набор health-signals — все механизмы выше проверены
+`FakeClient` / `QueuedFakeClient` без единого HTTP-вызова.
 
 ## Лицензия PyMuPDF
 
