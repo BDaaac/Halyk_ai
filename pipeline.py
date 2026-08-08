@@ -264,7 +264,12 @@ def run_pipeline(*, stop_after_stage: int | None = None):
 
                 evidence = find_counterfactual_evidence(
                     base_status=result.status,
-                    candidates=evidence_candidates(selected_roles, adjustments, ledger),
+                    candidates=evidence_candidates(
+                        selected_roles,
+                        adjustments,
+                        ledger,
+                        clause_roles=spec.role_descriptions.keys(),
+                    ),
                     recompute=recompute,
                     trace_scope=f"{scenario_id} {clause_id}",
                 )
@@ -635,7 +640,12 @@ def _scenario_results(scenario_id: str) -> dict[str, ScenarioClauseResult]:
 
         evidence = resolve_evidence(
             base_status=result.status,
-            candidates=evidence_candidates(selected_roles, adjustments, ledger),
+            candidates=evidence_candidates(
+                selected_roles,
+                adjustments,
+                ledger,
+                clause_roles=spec.role_descriptions.keys(),
+            ),
             recompute=recompute,
         )
         results[clause_id] = ScenarioClauseResult(

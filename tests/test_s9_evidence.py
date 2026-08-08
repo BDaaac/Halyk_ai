@@ -17,12 +17,110 @@ def test_evidence_candidates_resolve_audited_match_without_txn_id():
     adjustments = [{
         "type": "reclassification",
         "match": {"txn_id": None, "amount": "592296.10", "counterparty": "Irtysh Advisory Bureau"},
+        "from_role": "consulting",
+        "to_role": "interest",
         "accepted": True,
     }]
 
-    candidates = evidence_candidates({"interest": ["TXN-T1-0033"]}, adjustments, ledger)
+    candidates = evidence_candidates(
+        {"interest": ["TXN-T1-0033"]},
+        adjustments,
+        ledger,
+        clause_roles={"interest"},
+    )
 
     assert candidates == ["TXN-T1-0020"]
+
+
+def test_evidence_candidates_ignore_adjustment_when_roles_do_not_intersect_clause():
+    """P2/P7/P8-type failure mode: an accepted adjustment about an
+    unrelated role must not replace the selected candidate pool for this
+    clause. The evidence for a related_party covenant is a selected
+    related_party txn, not an opex reclassification that happens to be
+    on the same scenario."""
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0016", "amount": Decimal("-100"), "counterparty": "Related Co"},
+        {"txn_id": "TXN-T1-0031", "amount": Decimal("-884204.16"), "counterparty": "Unrelated Co"},
+    ])
+    adjustments = [{
+        "type": "amount_correction",
+        "match": {"txn_id": "TXN-T1-0031"},
+        "from_role": None,
+        "to_role": "payroll",
+        "accepted": True,
+    }]
+
+    candidates = evidence_candidates(
+        {"related_party": ["TXN-T1-0016"]},
+        adjustments,
+        ledger,
+        clause_roles={"related_party", "revenue"},
+    )
+
+    assert candidates == ["TXN-T1-0016"]
+
+
+def test_evidence_candidates_keep_adjustment_when_from_role_matches_clause():
+    """An adjustment whose from_role is a role this clause uses is
+    directly relevant — its counterfactual (was it really accepted?)
+    is a legitimate evidence question."""
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0040", "amount": Decimal("-500"), "counterparty": "Consultants LLP"},
+    ])
+    adjustments = [{
+        "type": "reclassification",
+        "match": {"txn_id": "TXN-T1-0040"},
+        "from_role": "consulting",
+        "to_role": "opex",
+        "accepted": True,
+    }]
+
+    candidates = evidence_candidates(
+        {"opex": ["TXN-T1-0050"]},
+        adjustments,
+        ledger,
+        clause_roles={"consulting", "revenue"},
+    )
+
+    assert candidates == ["TXN-T1-0040"]
+
+
+def test_evidence_candidates_fall_back_to_selection_when_no_adjustments():
+    ledger = pd.DataFrame([{"txn_id": "TXN-T1-0010", "amount": Decimal("100"), "counterparty": "X"}])
+    candidates = evidence_candidates(
+        {"revenue": ["TXN-T1-0010"]},
+        [],
+        ledger,
+        clause_roles={"revenue"},
+    )
+    assert candidates == ["TXN-T1-0010"]
+
+
+def test_evidence_candidates_do_not_include_txn_from_role_irrelevant_adjustment_even_if_borrower_matches():
+    """The adjustment lives on this scenario's ledger, but its role is
+    disjoint from the clause. Borrower-scope membership alone must not
+    admit it — only role relevance does. Falls back to selection."""
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0012", "amount": Decimal("100"), "counterparty": "Y"},
+        {"txn_id": "TXN-T1-0040", "amount": Decimal("-500"), "counterparty": "Z"},
+    ])
+    adjustments = [{
+        "type": "reclassification",
+        "match": {"txn_id": "TXN-T1-0040"},
+        "from_role": "consulting",
+        "to_role": "opex",
+        "accepted": True,
+    }]
+
+    candidates = evidence_candidates(
+        {"related_party": ["TXN-T1-0012"]},
+        adjustments,
+        ledger,
+        clause_roles={"related_party", "revenue"},
+    )
+
+    assert candidates == ["TXN-T1-0012"]
+    assert "TXN-T1-0040" not in candidates
 
 
 def test_counterfactual_skips_candidate_that_makes_denominator_zero():
