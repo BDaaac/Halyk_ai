@@ -362,16 +362,27 @@ def test_unsupported_covenant_localises_to_single_cell(monkeypatch, tmp_path):
     """A covenant with an unknown value_expr.op must localise the failure
     to that one cell (fallback baseline with threshold as actual);
     other clauses of the same scenario continue to compute normally,
-    submission remains schema-valid, other scenarios are untouched."""
+    submission remains schema-valid, other scenarios are untouched.
+
+    Byte-for-byte restore of both workspace/extractions/B1.json AND
+    workspace/submission.json — run_pipeline overwrites submission.json
+    with the poisoned B1 6.1 fallback cell, and leaving that on disk
+    would contaminate any subsequent `main.py run` in the same working
+    tree.
+    """
     from config import get_settings
     from stages.s8_compute import UnsupportedSpecError
 
     settings = get_settings()
-    # Poison B1 6.1's value_expr with an unknown op; snapshot the cache
-    # so the test cleans up after itself.
     extraction_path = settings.workspace_dir / "extractions" / "B1.json"
+    submission_path = settings.workspace_dir / "submission.json"
+
+    extraction_original = extraction_path.read_bytes()
+    submission_original: bytes | None = (
+        submission_path.read_bytes() if submission_path.exists() else None
+    )
+
     payload = json.loads(extraction_path.read_text(encoding="utf-8"))
-    original = extraction_path.read_text(encoding="utf-8")
     for cov in payload["output"]["covenants"]:
         if str(cov["clause_id"]) == "6.1":
             cov["value_expr"] = {"op": "concat_median", "role": "revenue"}
@@ -382,7 +393,12 @@ def test_unsupported_covenant_localises_to_single_cell(monkeypatch, tmp_path):
     try:
         submission = run_pipeline()
     finally:
-        extraction_path.write_text(original, encoding="utf-8")
+        extraction_path.write_bytes(extraction_original)
+        if submission_original is None:
+            if submission_path.exists():
+                submission_path.unlink()
+        else:
+            submission_path.write_bytes(submission_original)
 
     b1_61 = submission["answers"]["B1"]["6.1"]
     assert b1_61["status"] == "COMPLIANT", "unsupported cell must fall back to safe baseline status"
