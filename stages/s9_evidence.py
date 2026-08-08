@@ -11,19 +11,33 @@ import pandas as pd
 from lib.adjustments import resolve_txn_ids
 
 
-def evidence_candidates(selected_roles: dict[str, list[str]], adjustments: list[dict], ledger: pd.DataFrame) -> list[str]:
+def evidence_candidates(
+    selected_roles: dict[str, list[str]],
+    adjustments: list[dict],
+    ledger: pd.DataFrame,
+    *,
+    clause_roles: Iterable[str],
+) -> list[str]:
     """Return candidates for one coherent counterfactual question.
 
-    A documented accepted adjustment takes precedence: its counterfactual is
-    whether the audit treatment were rejected.  In its absence, a selected
-    transaction is tested as ``drop_txn``.  Mixing these two questions makes
-    unrelated ordinary ledger rows compete with the audited evidence.
+    A documented accepted adjustment takes precedence, but only when it
+    actually touches a role this clause uses (``from_role`` or ``to_role``
+    intersects ``clause_roles``). An adjustment about ``opex`` says nothing
+    about a ``related_party`` clause; letting it override the candidate
+    pool would replace the real evidence with an unrelated ledger row.
+    When no accepted adjustment is role-relevant, fall back to the
+    selected transactions and test each as ``drop_txn``.
     """
+    roles = set(clause_roles)
     selected = [txn_id for ids in selected_roles.values() for txn_id in ids]
     adjusted = [
         txn_id
         for adjustment in adjustments
         if adjustment.get("accepted", True) is not False
+        and (
+            adjustment.get("from_role") in roles
+            or adjustment.get("to_role") in roles
+        )
         for txn_id in resolve_txn_ids(adjustment.get("match", {}), ledger)
     ]
     return list(dict.fromkeys(adjusted or selected))
