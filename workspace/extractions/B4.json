@@ -1,0 +1,113 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "sum",
+          "role": "revenue"
+        },
+        "operator": ">=",
+        "threshold": "3500000.00",
+        "role_descriptions": {
+          "revenue": "Выручка за четвёртый финансовый квартал периода, оканчивающегося 2025-12-31"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "обязуется обеспечить Выручку за четвёртый финансовый квартал периода, оканчивающегося 2025-12-31, в размере не менее $3,500,000.00"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "capex"
+        },
+        "operator": "<=",
+        "threshold": "2000000.00",
+        "role_descriptions": {
+          "capex": "Капитальные затраты, суммы, отнесённые к данной статье в аудированной финансовой отчётости Заёмщика, включая суммы, переквалифицированные в неё независимым аудитором Заёмщика, и за вычетом сумм, переквалифицированных аудитором из данной статьи"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "не вправе допускать, чтобы такие совокупные расходы за период с 2025-01-01 по 2025-12-31 превысили $2,000,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "sum",
+          "role": "related_party"
+        },
+        "operator": "<=",
+        "threshold": "500000.00",
+        "role_descriptions": {
+          "related_party": "Ограниченные платежи в пользу связанных сторон"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "обязуется не допускать, чтобы совокупный размер Ограниченных платежей в пользу связанных сторон за период с 2025-01-01 по 2025-12-31 превышал $500,000.00"
+        }
+      }
+    ],
+    "adjustments": [
+      {
+        "type": "cutoff",
+        "match": {
+          "txn_id": "TXN-B4-0026",
+          "amount": null,
+          "counterparty": null
+        },
+        "from_role": "revenue",
+        "to_role": null,
+        "accepted": null,
+        "source": {
+          "doc_id": "audit_notes",
+          "quote": "Операция TXN-B4-0026, датированная 2025-11-20, исключена из ковенантного периода 2025 года. Основание: Право собственности и риски по грузу переходят только в январе 2026 года; авансовое поступление отсрочено и исключено из ковенантного периода 2025 года."
+        }
+      }
+    ],
+    "related_parties": {
+      "threshold_percent": "30.0",
+      "entities": [
+        {
+          "name": "Kazyna Capital LLP",
+          "share_percent": "38.9"
+        },
+        {
+          "name": "Shymkent Fuel Distributors LLP",
+          "share_percent": "48.0"
+        },
+        {
+          "name": "Turkistan Petroleum Traders LLP",
+          "share_percent": "29.4"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 30.0% и более голосующих прав, признаются связанными сторонами для целей Договора."
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 9470,
+    "output_tokens": 1297
+  },
+  "soft_warnings": []
+}

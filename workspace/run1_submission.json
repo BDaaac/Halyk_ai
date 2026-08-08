@@ -1,0 +1,211 @@
+{
+  "team": "",
+  "contact_email": "",
+  "model": "",
+  "answers": {
+    "P1": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      }
+    },
+    "P2": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 1.18,
+        "evidence_txn_id": "TXN-P2-0040"
+      },
+      "6.2": {
+        "status": "BREACH",
+        "actual": 3204881.55,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "BREACH",
+        "actual": 0.04,
+        "evidence_txn_id": null
+      }
+    },
+    "P3": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      }
+    },
+    "P4": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.48,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 1652704.31,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "BREACH",
+        "actual": 0.04,
+        "evidence_txn_id": null
+      }
+    },
+    "P5": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.74,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 8214663.28,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "BREACH",
+        "actual": 273418.66,
+        "evidence_txn_id": "TXN-P5-0004"
+      }
+    },
+    "P6": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 0.1,
+        "evidence_txn_id": "TXN-P6-0040"
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 3.64,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 1482663.28,
+        "evidence_txn_id": null
+      }
+    },
+    "P7": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 0.36,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 9146882.53,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "BREACH",
+        "actual": 291663.82,
+        "evidence_txn_id": null
+      }
+    },
+    "P8": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 4221314.95,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 1918204.36,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "BREACH",
+        "actual": 0.04,
+        "evidence_txn_id": null
+      }
+    },
+    "P9": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 0.6,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 8442118.53,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "BREACH",
+        "actual": 268447.19,
+        "evidence_txn_id": "TXN-P9-0040"
+      }
+    },
+    "P10": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.24,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 6000763.63,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 0.04,
+        "evidence_txn_id": null
+      }
+    },
+    "B1": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 1.68,
+        "evidence_txn_id": "TXN-B1-0020"
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 1284663.42,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 307018.08,
+        "evidence_txn_id": null
+      }
+    },
+    "B4": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 0.01,
+        "evidence_txn_id": null
+      }
+    }
+  }
+}

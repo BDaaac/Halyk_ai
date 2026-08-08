@@ -1,0 +1,162 @@
+{
+  "completed": {
+    "P1": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 0.46,
+        "evidence_txn_id": "TXN-P1-0010"
+      },
+      "6.2": {
+        "status": "BREACH",
+        "actual": 6842117.53,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 283664.18,
+        "evidence_txn_id": null
+      }
+    },
+    "P2": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 1.18,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "BREACH",
+        "actual": 3204881.55,
+        "evidence_txn_id": "TXN-P2-0036"
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 0.0,
+        "evidence_txn_id": null
+      }
+    },
+    "P3": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 1.4,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 8104772.36,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 264117.82,
+        "evidence_txn_id": null
+      }
+    },
+    "P4": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.37,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 1652704.31,
+        "evidence_txn_id": null
+      }
+    },
+    "P5": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.74,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 8214663.28,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "BREACH",
+        "actual": 273418.66,
+        "evidence_txn_id": "TXN-P5-0004"
+      }
+    },
+    "P6": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.0,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 3.64,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 1482663.28,
+        "evidence_txn_id": null
+      }
+    },
+    "P7": {},
+    "P9": {},
+    "P10": {
+      "6.1": {
+        "status": "COMPLIANT",
+        "actual": 0.24,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 6000763.63,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 0.04,
+        "evidence_txn_id": null
+      }
+    },
+    "B1": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 1.68,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 1284663.42,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 307018.08,
+        "evidence_txn_id": null
+      }
+    },
+    "B4": {
+      "6.1": {
+        "status": "BREACH",
+        "actual": 3084375.68,
+        "evidence_txn_id": null
+      },
+      "6.2": {
+        "status": "COMPLIANT",
+        "actual": 1527726.21,
+        "evidence_txn_id": null
+      },
+      "6.3": {
+        "status": "COMPLIANT",
+        "actual": 303949.09,
+        "evidence_txn_id": null
+      }
+    }
+  },
+  "errors": {
+    "P4": "DivisionByZero: [<class 'decimal.DivisionByZero'>]",
+    "P7": "ValueError: missing supported specification or selection for 6.1",
+    "P8": "ValueError: unsupported expression operation: fact",
+    "P9": "DivisionByZero: [<class 'decimal.DivisionByZero'>]"
+  },
+  "new_select_cost_usd": "0.023788",
+  "score": "Средний балл по ячейке : 0.6833\nТочность status        : 75.0% (27/36)\nСумма                  : 24.60 / 36\n\nЯчейки с потерями:\n    P2 6.3  0.000   status 'COMPLIANT' != 'BREACH'\n    P3 6.1  0.000   status 'COMPLIANT' != 'BREACH'\n    P5 6.1  0.000   status 'COMPLIANT' != 'BREACH'\n    P6 6.1  0.000   status 'COMPLIANT' != 'BREACH'\n    P7 6.1  0.000   status 'COMPLIANT' != 'BREACH'\n    P8 6.1  0.000   status 'COMPLIANT' != 'BREACH'\n    P8 6.3  0.000   status 'COMPLIANT' != 'BREACH'\n    P9 6.1  0.000   status 'COMPLIANT' != 'BREACH'\n    P9 6.3  0.000   status 'COMPLIANT' != 'BREACH'\n    P4 6.1  0.500   actual off by 100.0% of tolerance\n    P4 6.3  0.500   actual off by 100.0% of tolerance\n    P8 6.2  0.500   actual off by 100.0% of tolerance\n    P9 6.2  0.500   actual off by 100.0% of tolerance\n    B1 6.1  0.800   evidence None != 'TXN-B1-0020'\n    P2 6.1  0.800   evidence None != 'TXN-P2-0040'"
+}

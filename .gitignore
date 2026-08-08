@@ -1,5 +1,4 @@
 .worktrees/
-workspace/
 .env
 .venv/
 __pycache__/
@@ -11,3 +10,13 @@ rename_test_fixture/
 rename_test_foreign_fixture/
 runs/
 broken.json
+
+# workspace/: caches (extractions, selections, vision, doctypes) are
+# committed for reproducibility. Per-run artefacts and rejected-model
+# outputs are still ignored.
+workspace/submission.json
+workspace/submission_*.json
+workspace/errors.log
+workspace/cold_run_*
+workspace/extractions/rejected/
+workspace/selections/rejected/

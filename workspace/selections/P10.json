@@ -1,0 +1,85 @@
+{
+  "output": {
+    "6.1": {
+      "insurance_premiums": [
+        "TXN-P10-0011"
+      ],
+      "rent": [
+        "TXN-P10-0021"
+      ],
+      "utilities": [
+        "TXN-P10-0064"
+      ]
+    },
+    "6.2": {
+      "revenue": [
+        "TXN-P10-0055"
+      ],
+      "payroll": [
+        "TXN-P10-0020"
+      ],
+      "taxes": [
+        "TXN-P10-0063"
+      ]
+    },
+    "6.3": {
+      "related_party": [
+        "TXN-P10-0002"
+      ],
+      "revenue": [
+        "TXN-P10-0055"
+      ]
+    },
+    "uncertain": [
+      {
+        "txn_id": "TXN-P10-0017",
+        "role": "insurance_premiums",
+        "note": "risk survey servicing, reclassified per adjustments from opex to insurance_premiums"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 11537,
+    "output_tokens": 330
+  },
+  "soft_warnings": [
+    "stage7 accepted on retry after semantic: semantic: 6.1: uncertain transaction TXN-P10-0012 for role 'insurance_premiums' was not placed here",
+    "TXN-P10-0017: model applied reclassification, removed from target role insurance_premiums",
+    "6.1/insurance_premiums: weak description overlap for TXN-P10-0011",
+    "6.1/rent: weak description overlap for TXN-P10-0021",
+    "6.1/utilities: weak description overlap for TXN-P10-0064",
+    "6.2/revenue: weak description overlap for TXN-P10-0055",
+    "6.2/payroll: weak description overlap for TXN-P10-0020",
+    "6.2/taxes: weak description overlap for TXN-P10-0063",
+    "6.3/related_party: weak description overlap for TXN-P10-0002",
+    "6.3/revenue: weak description overlap for TXN-P10-0055",
+    "TXN-9499-0016 in EUR was not selected for any role",
+    "TXN-P2-0008 in EUR was not selected for any role",
+    "TXN-9606-0025 in EUR was not selected for any role",
+    "TXN-9244-0017 in EUR was not selected for any role",
+    "TXN-P1-0049 in EUR was not selected for any role",
+    "TXN-9173-0018 in EUR was not selected for any role",
+    "TXN-P9-0038 in EUR was not selected for any role",
+    "TXN-P3-0024 in EUR was not selected for any role",
+    "TXN-P7-0051 in EUR was not selected for any role",
+    "TXN-P5-0047 in EUR was not selected for any role",
+    "TXN-P10-0057 in EUR was not selected for any role",
+    "TXN-9486-0034 in EUR was not selected for any role",
+    "TXN-B4-0049 in EUR was not selected for any role",
+    "TXN-9553-0013 in EUR was not selected for any role",
+    "TXN-9813-0044 in EUR was not selected for any role",
+    "TXN-9083-0033 in EUR was not selected for any role",
+    "TXN-B1-0038 in EUR was not selected for any role",
+    "TXN-P6-0042 in EUR was not selected for any role",
+    "TXN-9203-0036 in EUR was not selected for any role",
+    "TXN-9807-0030 in EUR was not selected for any role",
+    "TXN-P8-0041 in EUR was not selected for any role",
+    "TXN-9610-0035 in EUR was not selected for any role",
+    "TXN-B1-0050 in EUR was not selected for any role",
+    "TXN-9224-0002 in EUR was not selected for any role",
+    "TXN-9535-0018 in EUR was not selected for any role",
+    "TXN-P1-0005 in EUR was not selected for any role",
+    "TXN-P8-0025 in EUR was not selected for any role",
+    "TXN-P1-0018 in EUR was not selected for any role"
+  ]
+}

@@ -213,6 +213,80 @@ def test_stage8_nan_amount_raises_labelled_error_naming_txn_and_role():
         build_clause_selection(spec, {"payroll": ["TXN-T1-0007"]}, ledger, [])
 
 
+def test_specifications_localises_unsupported_op_via_unsupported_out():
+    """Failure containment #1: an unknown value_expr.op does not sink the
+    whole scenario. The offending clause is recorded in unsupported_out
+    with its extracted threshold; other clauses build normally."""
+    from stages.s8_compute import UnsupportedSpecError, specifications_from_extraction
+
+    extraction = {
+        "covenants": [
+            {
+                "clause_id": "6.1",
+                "value_expr": {"op": "concat", "role": "x"},  # unsupported op
+                "operator": ">=",
+                "threshold": "3500000.00",
+                "role_descriptions": {"x": "Whatever"},
+            },
+            {
+                "clause_id": "6.2",
+                "value_expr": {"op": "sum", "role": "revenue"},
+                "operator": ">=",
+                "threshold": "1000000.00",
+                "role_descriptions": {"revenue": "Revenue"},
+            },
+        ],
+    }
+    unsupported: dict = {}
+
+    specs = specifications_from_extraction("T1", extraction, unsupported_out=unsupported)
+
+    assert "6.1" not in specs
+    assert "6.2" in specs
+    assert "6.1" in unsupported
+    assert unsupported["6.1"]["threshold"] == Decimal("3500000.00")
+    assert "concat" in unsupported["6.1"]["reason"]
+
+    # Without unsupported_out, the exception must propagate — nobody should
+    # accidentally swallow it as a plain Exception.
+    with pytest.raises(UnsupportedSpecError):
+        specifications_from_extraction("T1", extraction)
+
+
+def test_evaluate_raises_unsupported_for_missing_role_and_missing_fact():
+    """Failure containment #2 & #3: missing role in a sum node and missing
+    required fact both surface as UnsupportedSpecError, not bare ValueError."""
+    from stages.s8_compute import UnsupportedSpecError, evaluate_expr
+    from models import Expr
+
+    with pytest.raises(UnsupportedSpecError, match="missing a role"):
+        evaluate_expr(Expr(op="sum", role=None), selection={})
+
+    with pytest.raises(UnsupportedSpecError, match="document fact is missing"):
+        evaluate_expr(Expr(op="fact", fact_name="ghost"), selection={}, facts={})
+
+
+def test_evaluate_still_raises_bare_valueerror_for_programming_errors():
+    """Non-containment ValueErrors (e.g. depth-limit, invalid const) must
+    keep surfacing as ValueError so a broad `except UnsupportedSpecError`
+    in the pipeline does not swallow real bugs."""
+    from stages.s8_compute import UnsupportedSpecError, evaluate_expr
+    from models import Expr
+
+    # Depth cap trips well before it would need to touch role/fact logic.
+    deep = Expr(op="add", args=(Expr(op="sum", role="r"), Expr(op="sum", role="r")))
+    for _ in range(6):
+        deep = Expr(op="add", args=(deep, Expr(op="sum", role="r")))
+    with pytest.raises(ValueError) as exc_info:
+        evaluate_expr(deep, selection={"r": [Decimal("1")]})
+    assert not isinstance(exc_info.value, UnsupportedSpecError)
+
+    # const without value.
+    with pytest.raises(ValueError) as exc_info:
+        evaluate_expr(Expr(op="const", value=None), selection={})
+    assert not isinstance(exc_info.value, UnsupportedSpecError)
+
+
 def test_stage8_evaluates_document_fact_expression():
     extraction = {
         "covenants": [{

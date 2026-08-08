@@ -1,0 +1,74 @@
+{
+  "output": {
+    "6.1": {
+      "capital_expenditures": [
+        "TXN-P1-0010"
+      ],
+      "opex": [
+        "TXN-P1-0042",
+        "TXN-P1-0045"
+      ],
+      "rent": [
+        "TXN-P1-0014"
+      ]
+    },
+    "6.2": {
+      "revenue": [
+        "TXN-P1-0030"
+      ]
+    },
+    "6.3": {
+      "related_party": [
+        "TXN-P1-0031"
+      ]
+    },
+    "uncertain": [
+      {
+        "txn_id": "TXN-P1-0045",
+        "role": "opex",
+        "note": "услуги обследования причальной стенки, отнесённые к периоду 2026 года по adjustments, но исходное описание — эксплуатационная услуга; включена по существу операции"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 10886,
+    "output_tokens": 300
+  },
+  "soft_warnings": [
+    "stage7 accepted on retry after semantic: semantic: 6.1: uncertain transaction TXN-P1-0045 for role 'opex' was not placed here",
+    "6.1/capital_expenditures: weak description overlap for TXN-P1-0010",
+    "6.1/opex: weak description overlap for TXN-P1-0042",
+    "6.1/opex: weak description overlap for TXN-P1-0045",
+    "6.1/rent: weak description overlap for TXN-P1-0014",
+    "6.2/revenue: weak description overlap for TXN-P1-0030",
+    "6.3/related_party: weak description overlap for TXN-P1-0031",
+    "TXN-9499-0016 in EUR was not selected for any role",
+    "TXN-P2-0008 in EUR was not selected for any role",
+    "TXN-9606-0025 in EUR was not selected for any role",
+    "TXN-9244-0017 in EUR was not selected for any role",
+    "TXN-P1-0049 in EUR was not selected for any role",
+    "TXN-9173-0018 in EUR was not selected for any role",
+    "TXN-P9-0038 in EUR was not selected for any role",
+    "TXN-P3-0024 in EUR was not selected for any role",
+    "TXN-P7-0051 in EUR was not selected for any role",
+    "TXN-P5-0047 in EUR was not selected for any role",
+    "TXN-P10-0057 in EUR was not selected for any role",
+    "TXN-9486-0034 in EUR was not selected for any role",
+    "TXN-B4-0049 in EUR was not selected for any role",
+    "TXN-9553-0013 in EUR was not selected for any role",
+    "TXN-9813-0044 in EUR was not selected for any role",
+    "TXN-9083-0033 in EUR was not selected for any role",
+    "TXN-B1-0038 in EUR was not selected for any role",
+    "TXN-P6-0042 in EUR was not selected for any role",
+    "TXN-9203-0036 in EUR was not selected for any role",
+    "TXN-9807-0030 in EUR was not selected for any role",
+    "TXN-P8-0041 in EUR was not selected for any role",
+    "TXN-9610-0035 in EUR was not selected for any role",
+    "TXN-B1-0050 in EUR was not selected for any role",
+    "TXN-9224-0002 in EUR was not selected for any role",
+    "TXN-9535-0018 in EUR was not selected for any role",
+    "TXN-P1-0005 in EUR was not selected for any role",
+    "TXN-P8-0025 in EUR was not selected for any role",
+    "TXN-P1-0018 in EUR was not selected for any role"
+  ]
+}

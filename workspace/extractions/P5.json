@@ -1,0 +1,139 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "capex"
+            },
+            {
+              "op": "subtract",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "revenue"
+                },
+                {
+                  "op": "sum",
+                  "role": "opex"
+                }
+              ]
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "9.00",
+        "role_descriptions": {
+          "capex": "капитальные затраты Группы",
+          "revenue": "Выручка",
+          "opex": "Операционные расходы"
+        },
+        "applicability": {
+          "expr": {
+            "op": "fact",
+            "fact_name": "period_2025"
+          },
+          "operator": "during",
+          "threshold": null
+        },
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "отношение совокупных капитальных затрат Группы к EBITDA Заёмщика не превышало 9.00x"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "revenue"
+        },
+        "operator": ">=",
+        "threshold": "7500000.00",
+        "role_descriptions": {
+          "revenue": "Выручка по аудированной финансовой отчётности с учётом переквалификаций"
+        },
+        "applicability": {
+          "expr": {
+            "op": "fact",
+            "fact_name": "period_2025"
+          },
+          "operator": "during",
+          "threshold": null
+        },
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "поддерживать совокупный объём таких поступлений за период с 2025-01-01 по 2025-12-31 на уровне не менее $7,500,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "sum",
+          "role": "related_party"
+        },
+        "operator": "<=",
+        "threshold": "260000.00",
+        "role_descriptions": {
+          "related_party": "платежи в адрес аффилированных и связанных сторон"
+        },
+        "applicability": {
+          "expr": {
+            "op": "fact",
+            "fact_name": "period_2025"
+          },
+          "operator": "during",
+          "threshold": null
+        },
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "совокупные платежи Заёмщика в адрес аффилированных и связанных сторон не должны превышать $260,000.00"
+        }
+      }
+    ],
+    "adjustments": [],
+    "related_parties": {
+      "threshold_percent": "35.0",
+      "entities": [
+        {
+          "name": "Pavlodar Plant Services LLP",
+          "share_percent": "33.8"
+        },
+        {
+          "name": "Sarybel Capital LLP",
+          "share_percent": "41.2"
+        },
+        {
+          "name": "Ural Turbine Works LLP",
+          "share_percent": "9.4"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "section": "Бенефициарное владение и контроль",
+        "quote": "Организации, в которых Группа владеет 35.0% и более голосующих прав, признаются связанными сторонами для целей Договора"
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 8630,
+    "output_tokens": 1210
+  },
+  "soft_warnings": []
+}

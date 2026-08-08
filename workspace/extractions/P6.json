@@ -1,0 +1,123 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "related_party"
+            },
+            {
+              "op": "sum",
+              "role": "opex"
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "0.08",
+        "role_descriptions": {
+          "related_party": "Платежи в пользу связанных сторон",
+          "opex": "Операционные расходы"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "обязуется не допускать, чтобы совокупный объём платежей в пользу связанных сторон за период с 2025-01-01 по 2025-12-31 превышал 0.08x Операционных расходов"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "revenue"
+            },
+            {
+              "op": "add",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "payroll"
+                },
+                {
+                  "op": "sum",
+                  "role": "utilities"
+                }
+              ]
+            }
+          ]
+        },
+        "operator": ">=",
+        "threshold": "3.00",
+        "role_descriptions": {
+          "revenue": "Выручка",
+          "payroll": "Расходы на оплату труда",
+          "utilities": "Коммунальные расходы"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "обеспечивает, чтобы Выручка за период с 2025-01-01 по 2025-12-31 составляла не менее 3.00x совокупной величины Расходов на оплату труда и Коммунальных расходов"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "sum",
+          "role": "capex"
+        },
+        "operator": "<=",
+        "threshold": "1600000.00",
+        "role_descriptions": {
+          "capex": "Капитальные затраты"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "обязуется не допускать, чтобы совокупный объём расходов по статье «Капитальные затраты» за период с 2025-01-01 по 2025-12-31 превышал $1,600,000.00"
+        }
+      }
+    ],
+    "adjustments": [],
+    "related_parties": {
+      "threshold_percent": "40.0",
+      "entities": [
+        {
+          "name": "Taraz Holding Group LLP",
+          "share_percent": "46.8"
+        },
+        {
+          "name": "Taraz Kiln Services LLP",
+          "share_percent": "38.1"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 40.0% и более голосующих прав, признаются связанными сторонами"
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 8623,
+    "output_tokens": 1127
+  },
+  "soft_warnings": []
+}

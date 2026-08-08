@@ -1,0 +1,144 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "funding_receipts"
+            },
+            {
+              "op": "subtract",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "revenue"
+                },
+                {
+                  "op": "sum",
+                  "role": "opex"
+                }
+              ]
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "1.70",
+        "role_descriptions": {
+          "funding_receipts": "поступления по финансированию",
+          "revenue": "Выручка",
+          "opex": "Операционные расходы"
+        },
+        "applicability": {
+          "expr": {
+            "op": "sum",
+            "role": "funding_receipts"
+          },
+          "operator": ">",
+          "threshold": "4000000.00"
+        },
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": false,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "Ограничение отношения поступлений по финансированию к EBITDA величиной 1.70x за период с 2025-01-01 по 2025-12-31 применяется к Заёмщику (Shymkent Refinery Services JSC) только при условии, что совокупные поступления по финансированию превышают $4,000,000.00"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "revenue"
+        },
+        "operator": ">=",
+        "threshold": "6500000.00",
+        "role_descriptions": {
+          "revenue": "Выручка"
+        },
+        "applicability": null,
+        "exception": {
+          "raw_text": "Суммы, переквалифицированные независимым аудитором Заёмщика в состав финансовых или иных неоперационных статей, в счёт исполнения настоящего ковенанта не засчитываются независимо от их первоначального отражения в учёте",
+          "expr": null
+        },
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "совокупные поступления Shymkent Refinery Services JSC по указанной статье за период с 2025-01-01 по 2025-12-31 будут не ниже $6,500,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "sum",
+          "role": "related_party"
+        },
+        "operator": "<=",
+        "threshold": "400000.00",
+        "role_descriptions": {
+          "related_party": "Ограниченные платежи в пользу связанных сторон"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "Shymkent Refinery Services JSC обязуется не допускать, чтобы совокупный размер Ограниченных платежей в пользу связанных сторон за период с 2025-01-01 по 2025-12-31 превышал $400,000.00"
+        }
+      }
+    ],
+    "adjustments": [
+      {
+        "type": "fx_rate",
+        "match": {
+          "txn_id": null,
+          "amount": null,
+          "counterparty": "Rheinland Katalyse Service GmbH"
+        },
+        "derived_from": {
+          "amount_eur": "72146.75",
+          "amount_usd": "83690.23"
+        },
+        "source": {
+          "doc_id": "audit_notes",
+          "quote": "счёт на сумму 72,146.75 EUR урегулирован платежом в долларах США в размере $83,690.23"
+        }
+      }
+    ],
+    "related_parties": {
+      "threshold_percent": "25.0",
+      "entities": [
+        {
+          "name": "Turan Capital LLP",
+          "share_percent": "28.8"
+        },
+        {
+          "name": "Shymkent Plant Services LLP",
+          "share_percent": "22.9"
+        },
+        {
+          "name": "KazMunayGas Refining JSC",
+          "share_percent": "4.1"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 25.0% и более голосующих прав, признаются связанными сторонами для целей Договора"
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 9284,
+    "output_tokens": 1460
+  },
+  "soft_warnings": []
+}

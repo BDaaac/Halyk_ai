@@ -10,6 +10,22 @@ from lib.adjustments import resolve_txn_ids
 from models import Condition, CovenantResult, CovenantSpec, Expr
 
 
+class UnsupportedSpecError(Exception):
+    """Raised at the three narrowly proven failure points when a covenant's
+    spec cannot be evaluated (unknown value_expr op / missing role in a
+    sum node / missing required fact in a fact node).
+
+    Caught by run_pipeline **only** for these three failure modes so that
+    the containment stays local to a single cell instead of taking down
+    the whole scenario. Not a subclass of ValueError on purpose — broad
+    `except ValueError` in the pipeline must keep surfacing programming
+    errors as before.
+    """
+
+
+_SUPPORTED_OPS = {"sum", "const", "fact", "add", "subtract", "divide", "max", "min"}
+
+
 def _expr_from_output(raw: dict[str, Any]) -> Expr:
     operation = raw.get("op")
     if operation == "fact":
@@ -24,8 +40,9 @@ def _expr_from_output(raw: dict[str, Any]) -> Expr:
         return Expr(op="sum", role=role)
     if operation == "const":
         return Expr(op="const", value=Decimal(str(raw["value"])))
-    if operation not in {"add", "subtract", "divide", "max", "min"}:
-        raise ValueError(f"unsupported expression operation: {operation}")
+    if operation not in _SUPPORTED_OPS:
+        # Failure-containment point #1: unknown value_expr operation.
+        raise UnsupportedSpecError(f"unsupported expression operation: {operation!r}")
     arguments = raw.get("args")
     if not isinstance(arguments, list) or len(arguments) < 2:
         raise ValueError(f"{operation} expression requires at least two args")
@@ -52,7 +69,31 @@ def _condition_from_output(raw: dict[str, Any] | None) -> Condition | None:
         return None
 
 
-def specifications_from_extraction(scenario_id: str, extraction: dict[str, Any]) -> dict[str, CovenantSpec]:
+def _safe_positive_decimal(raw: Any) -> Decimal | None:
+    """Return raw parsed as a finite positive Decimal, or None."""
+    if raw is None:
+        return None
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return None
+    if not value.is_finite() or value <= 0:
+        return None
+    return value
+
+
+def specifications_from_extraction(
+    scenario_id: str,
+    extraction: dict[str, Any],
+    *,
+    unsupported_out: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, CovenantSpec]:
+    """Build per-covenant specs. If ``unsupported_out`` is passed, an
+    ``UnsupportedSpecError`` on any single covenant is recorded there
+    (``{clause_id: {threshold, reason}}``) instead of aborting the whole
+    scenario. Other covenants still build normally. Broad exceptions —
+    e.g. ProgrammingError — continue to propagate unchanged.
+    """
     specifications: dict[str, CovenantSpec] = {}
     facts: dict[str, Decimal] = {}
     for fact in extraction.get("document_facts", []):
@@ -68,17 +109,25 @@ def specifications_from_extraction(scenario_id: str, extraction: dict[str, Any])
             continue
     for covenant in extraction.get("covenants", []):
         clause_id = str(covenant["clause_id"])
-        specifications[clause_id] = CovenantSpec(
-            scenario_id=scenario_id,
-            clause_id=clause_id,
-            value_expr=_expr_from_output(covenant["value_expr"]),
-            operator=covenant["operator"],
-            threshold=Decimal(str(covenant["threshold"])),
-            applicability=_condition_from_output(covenant.get("applicability")),
-            exception=_condition_from_output(covenant.get("exception")),
-            role_descriptions=dict(covenant.get("role_descriptions", {})),
-            facts=facts,
-        )
+        try:
+            specifications[clause_id] = CovenantSpec(
+                scenario_id=scenario_id,
+                clause_id=clause_id,
+                value_expr=_expr_from_output(covenant["value_expr"]),
+                operator=covenant["operator"],
+                threshold=Decimal(str(covenant["threshold"])),
+                applicability=_condition_from_output(covenant.get("applicability")),
+                exception=_condition_from_output(covenant.get("exception")),
+                role_descriptions=dict(covenant.get("role_descriptions", {})),
+                facts=facts,
+            )
+        except UnsupportedSpecError as error:
+            if unsupported_out is None:
+                raise
+            unsupported_out[clause_id] = {
+                "threshold": _safe_positive_decimal(covenant.get("threshold")),
+                "reason": str(error),
+            }
     return specifications
 
 
@@ -170,7 +219,8 @@ def build_clause_selection(
 
 def _values(selection: dict[str, Iterable[Decimal]], role: str | None) -> list[Decimal]:
     if role is None:
-        raise ValueError("sum expression requires a role")
+        # Failure-containment point #2: sum node with no role attached.
+        raise UnsupportedSpecError("sum expression is missing a role")
     return [Decimal(str(value)) for value in selection.get(role, [])]
 
 
@@ -185,7 +235,10 @@ def evaluate_expr(expr: Expr, selection: dict[str, Iterable[Decimal]], facts: di
         return expr.value
     if expr.op == "fact":
         if not expr.fact_name or expr.fact_name not in (facts or {}):
-            raise ValueError(f"document fact is missing: {expr.fact_name}")
+            # Failure-containment point #3: fact node references a name that
+            # was never emitted by stage 6 (or was skipped because its value
+            # did not parse as Decimal).
+            raise UnsupportedSpecError(f"document fact is missing: {expr.fact_name}")
         return facts[expr.fact_name]
 
     values = [evaluate_expr(argument, selection, facts, depth=depth + 1) for argument in expr.args]
@@ -199,7 +252,8 @@ def evaluate_expr(expr: Expr, selection: dict[str, Iterable[Decimal]], facts: di
         return max(values)
     if expr.op == "min":
         return min(values)
-    raise ValueError(f"unsupported expression operation: {expr.op}")
+    # Reached only if a spec sneaked past _expr_from_output's whitelist.
+    raise UnsupportedSpecError(f"unsupported expression operation: {expr.op!r}")
 
 
 def _matches(actual: Decimal, operator: str, threshold: Decimal) -> bool:

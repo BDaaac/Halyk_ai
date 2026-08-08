@@ -1,0 +1,167 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "add",
+              "args": [
+                {
+                  "op": "subtract",
+                  "args": [
+                    {
+                      "op": "sum",
+                      "role": "revenue"
+                    },
+                    {
+                      "op": "sum",
+                      "role": "opex"
+                    }
+                  ]
+                },
+                {
+                  "op": "sum",
+                  "role": "oneoff_add_backs"
+                }
+              ]
+            },
+            {
+              "op": "sum",
+              "role": "revenue"
+            }
+          ]
+        },
+        "operator": ">=",
+        "threshold": "0.28",
+        "role_descriptions": {
+          "revenue": "Выручка",
+          "opex": "Операционные расходы",
+          "oneoff_add_backs": "Разовые статьи, признанные аудиторами подлежащими обратному добавлению согласно раскрытой учётной политике"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "обеспечивает, чтобы отношение Скорректированной EBITDA к Выручке составляло не менее 0.28x"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "capex"
+        },
+        "operator": "<=",
+        "threshold": "1800000.00",
+        "role_descriptions": {
+          "capex": "Капитальные затраты"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "совокупные расходы по указанной статье, понесённые в период с 2025-01-01 по 2025-12-31, не превышали $1,800,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "related_party"
+            },
+            {
+              "op": "sum",
+              "role": "revenue"
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "0.04",
+        "role_descriptions": {
+          "related_party": "Ограниченные платежи в пользу аффилированных лиц",
+          "revenue": "Выручка"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "совокупные Ограниченные платежи в пользу аффилированных лиц за период с 2025-01-01 по 2025-12-31 превышали 0.04x от выручки"
+        }
+      }
+    ],
+    "adjustments": [
+      {
+        "type": "reclassification",
+        "match": {
+          "txn_id": null,
+          "amount": "342905.28",
+          "counterparty": "Aral Freight Arbitration Bureau"
+        },
+        "from_role": null,
+        "to_role": "oneoff_add_backs",
+        "accepted": true,
+        "source": {
+          "doc_id": "audit_notes",
+          "quote": "Урегулирование спора по демереджу | «Aral Freight Arbitration Bureau» | $342,905.28"
+        }
+      },
+      {
+        "type": "reclassification",
+        "match": {
+          "txn_id": null,
+          "amount": "481247.63",
+          "counterparty": "Ilek Restoration Works LLP"
+        },
+        "from_role": null,
+        "to_role": "oneoff_add_backs",
+        "accepted": true,
+        "source": {
+          "doc_id": "audit_notes",
+          "quote": "Устранение последствий паводка на силосном комплексе | «Ilek Restoration Works LLP» | $481,247.63"
+        }
+      }
+    ],
+    "related_parties": {
+      "threshold_percent": "30.0",
+      "entities": [
+        {
+          "name": "Aktobe Elevator Services LLP",
+          "share_percent": "28.6"
+        },
+        {
+          "name": "Aral Capital Partners, LLP",
+          "share_percent": "33.4"
+        },
+        {
+          "name": "Ural Conveyor Works LLP",
+          "share_percent": "7.3"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 30.0% и более голосующих прав, признаются связанными сторонами для целей Договора"
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 9148,
+    "output_tokens": 1471
+  },
+  "soft_warnings": []
+}

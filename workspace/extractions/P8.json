@@ -1,0 +1,145 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "add",
+          "args": [
+            {
+              "op": "sum",
+              "role": "payroll"
+            },
+            {
+              "op": "fact",
+              "fact_name": "severance_liability"
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "4000000.00",
+        "role_descriptions": {
+          "payroll": "расходы на оплату труда, понесённые Заёмщиком за период с 2025-01-01 по 2025-12-31",
+          "severance_liability": "совокупное обязательство Заёмщика по любой программе выходных пособий, сокращения или удержания персонала"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "обязуется не допускать, чтобы Совокупные обязательства по персоналу по состоянию на 2025-12-31 превышали $4,000,000.00"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "capex"
+        },
+        "operator": "<=",
+        "threshold": "2100000.00",
+        "role_descriptions": {
+          "capex": "совокупный объём расходов по статье «Капитальные затраты» за период с 2025-01-01 по 2025-12-31"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "обязуется не допускать, чтобы совокупный объём расходов по статье «Капитальные затраты» за период с 2025-01-01 по 2025-12-31 превышал $2,100,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "related_party"
+            },
+            {
+              "op": "sum",
+              "role": "revenue"
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "0.04",
+        "role_descriptions": {
+          "related_party": "совокупные Ограниченные платежи в пользу аффилированных лиц за период с 2025-01-01 по 2025-12-31",
+          "revenue": "выручка за период с 2025-01-01 по 2025-12-31"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "обязуется не допускать, чтобы совокупные Ограниченные платежи в пользу аффилированных лиц за период с 2025-01-01 по 2025-12-31 превышали 0.04x от выручки за тот же период"
+        }
+      }
+    ],
+    "adjustments": [
+      {
+        "type": "amount_correction",
+        "match": {
+          "txn_id": "TXN-P8-0031",
+          "amount": "884204.16",
+          "counterparty": "Kyzylorda Drilling Personnel LLP"
+        },
+        "from_role": null,
+        "to_role": "payroll",
+        "sign": "expense",
+        "accepted": true,
+        "source": {
+          "doc_id": "audit_notes",
+          "quote": "Операция TXN-P8-0031 (Kyzylorda Drilling Personnel LLP): сумма не отражена в выгрузке реестра; фактическая сумма операции составляет $884,204.16 (расход)"
+        }
+      }
+    ],
+    "related_parties": {
+      "threshold_percent": "38.0",
+      "entities": [
+        {
+          "name": "Kyzylorda Drilling Personnel LLP",
+          "share_percent": "36.2"
+        },
+        {
+          "name": "Syrdarya Capital Holding, LLP",
+          "share_percent": "44.6"
+        },
+        {
+          "name": "Ural Rig Manufacturing LLP",
+          "share_percent": "10.7"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 38.0% и более голосующих прав, признаются связанными сторонами для целей Договора"
+      }
+    },
+    "document_facts": [
+      {
+        "fact_name": "severance_liability",
+        "value": "918447.52",
+        "currency": "USD",
+        "source": {
+          "doc_id": "audit_notes",
+          "section": "Примечание 7",
+          "quote": "совокупное обязательство по программе выходных пособий в размере $918,447.52 раскрывается и не отражается отдельной операцией в бухгалтерской книге"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 8960,
+    "output_tokens": 1585
+  },
+  "soft_warnings": []
+}

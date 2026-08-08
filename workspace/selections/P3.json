@@ -1,0 +1,76 @@
+{
+  "output": {
+    "6.1": {
+      "funding_receipts": [
+        "TXN-P3-0002"
+      ],
+      "revenue": [
+        "TXN-P3-0010"
+      ],
+      "opex": [
+        "TXN-P3-0028"
+      ]
+    },
+    "6.2": {
+      "revenue": [
+        "TXN-P3-0010"
+      ]
+    },
+    "6.3": {
+      "related_party": [
+        "TXN-P3-0001"
+      ]
+    },
+    "uncertain": [
+      {
+        "txn_id": "TXN-P3-0002",
+        "role": "funding_receipts",
+        "note": "term loan drawdown, единственный явный кандидат на роль поступлений по финансированию"
+      },
+      {
+        "txn_id": "TXN-P3-0028",
+        "role": "opex",
+        "note": "plant servicing and operating costs — единственная явная статья операционных расходов"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 10879,
+    "output_tokens": 320
+  },
+  "soft_warnings": [
+    "6.1/funding_receipts: weak description overlap for TXN-P3-0002",
+    "6.1/revenue: weak description overlap for TXN-P3-0010",
+    "6.1/opex: weak description overlap for TXN-P3-0028",
+    "6.2/revenue: weak description overlap for TXN-P3-0010",
+    "6.3/related_party: weak description overlap for TXN-P3-0001",
+    "TXN-9499-0016 in EUR was not selected for any role",
+    "TXN-P2-0008 in EUR was not selected for any role",
+    "TXN-9606-0025 in EUR was not selected for any role",
+    "TXN-9244-0017 in EUR was not selected for any role",
+    "TXN-P1-0049 in EUR was not selected for any role",
+    "TXN-9173-0018 in EUR was not selected for any role",
+    "TXN-P9-0038 in EUR was not selected for any role",
+    "TXN-P3-0024 in EUR was not selected for any role",
+    "TXN-P7-0051 in EUR was not selected for any role",
+    "TXN-P5-0047 in EUR was not selected for any role",
+    "TXN-P10-0057 in EUR was not selected for any role",
+    "TXN-9486-0034 in EUR was not selected for any role",
+    "TXN-B4-0049 in EUR was not selected for any role",
+    "TXN-9553-0013 in EUR was not selected for any role",
+    "TXN-9813-0044 in EUR was not selected for any role",
+    "TXN-9083-0033 in EUR was not selected for any role",
+    "TXN-B1-0038 in EUR was not selected for any role",
+    "TXN-P6-0042 in EUR was not selected for any role",
+    "TXN-9203-0036 in EUR was not selected for any role",
+    "TXN-9807-0030 in EUR was not selected for any role",
+    "TXN-P8-0041 in EUR was not selected for any role",
+    "TXN-9610-0035 in EUR was not selected for any role",
+    "TXN-B1-0050 in EUR was not selected for any role",
+    "TXN-9224-0002 in EUR was not selected for any role",
+    "TXN-9535-0018 in EUR was not selected for any role",
+    "TXN-P1-0005 in EUR was not selected for any role",
+    "TXN-P8-0025 in EUR was not selected for any role",
+    "TXN-P1-0018 in EUR was not selected for any role"
+  ]
+}

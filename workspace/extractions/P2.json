@@ -1,0 +1,153 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "add",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "revenue"
+                },
+                {
+                  "op": "sum",
+                  "role": "funding_receipts"
+                }
+              ]
+            },
+            {
+              "op": "add",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "opex"
+                },
+                {
+                  "op": "sum",
+                  "role": "capex"
+                }
+              ]
+            }
+          ]
+        },
+        "operator": ">=",
+        "threshold": "1.20",
+        "role_descriptions": {
+          "revenue": "выручка",
+          "funding_receipts": "поступления по финансированию",
+          "opex": "операционные затраты",
+          "capex": "капитальные затраты"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "Отношение суммы выручки и поступлений по финансированию Заёмщика (Almaty Cold Chain JSC) к сумме операционных и капитальных затрат за период с 2025-01-01 по 2025-12-31 должно составлять не менее 1.20x"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "capex"
+        },
+        "operator": "<=",
+        "threshold": "3000000.00",
+        "role_descriptions": {
+          "capex": "Капитальные затраты — суммы, отнесённые к данной статье в аудированной финансовой отчётости Заёмщика, включая суммы, переквалифицированные в неё независимым аудитором Заёмщика, и за вычетом сумм, переквалифицированных аудитором из данной статьи"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "Almaty Cold Chain JSC не вправе допускать, чтобы такие совокупные расходы за период с 2025-01-01 по 2025-12-31 превысили $3,000,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "related_party"
+            },
+            {
+              "op": "sum",
+              "role": "revenue"
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "0.03",
+        "role_descriptions": {
+          "related_party": "Ограниченные платежи в пользу аффилированных лиц",
+          "revenue": "выручка"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "совокупные Ограниченные платежи в пользу аффилированных лиц за период с 2025-01-01 по 2025-12-31 превышали 0.03x от выручки за тот же период. Отнесение контрагента к аффилированным лицам определяется в соответствии с политикой в отношении связанных сторон, зафиксированной в досье Заёмщика по идентификации клиента"
+        }
+      }
+    ],
+    "adjustments": [
+      {
+        "type": "reclassification",
+        "match": {
+          "txn_id": null,
+          "amount": "1104663.28",
+          "counterparty": "Tien Shan Advisory Bureau"
+        },
+        "from_role": "consulting",
+        "to_role": "opex",
+        "accepted": true,
+        "source": {
+          "doc_id": "audit_notes",
+          "quote": "Сумма в размере $1,104,663.28, выплаченная контрагенту Tien Shan Advisory Bureau, первоначально учтённая как Консультационные услуги, переклассифицирована для целей соблюдения ковенантов как Операционные расходы. Основание: Вознаграждение относится к текущему управлению складскими операциями и для целей ковенантов учитывается как операционные расходы"
+        }
+      }
+    ],
+    "related_parties": {
+      "threshold_percent": "25.0",
+      "entities": [
+        {
+          "name": "Almaty Chill Logistics LLP",
+          "share_percent": "8.6"
+        },
+        {
+          "name": "Tien Shan Advisory Bureau",
+          "share_percent": "23.4"
+        },
+        {
+          "name": "Zhetysu Capital Partners LLP",
+          "share_percent": "31.2"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 25.0% и более голосующих прав, признаются связанными сторонами для целей Договора"
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 9218,
+    "output_tokens": 1581
+  },
+  "soft_warnings": []
+}

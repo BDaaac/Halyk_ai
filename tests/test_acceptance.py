@@ -358,6 +358,45 @@ def test_actual_always_positive_two_decimals():
             assert Decimal(str(cell["actual"])).as_tuple().exponent >= -2
 
 
+def test_unsupported_covenant_localises_to_single_cell(monkeypatch, tmp_path):
+    """A covenant with an unknown value_expr.op must localise the failure
+    to that one cell (fallback baseline with threshold as actual);
+    other clauses of the same scenario continue to compute normally,
+    submission remains schema-valid, other scenarios are untouched."""
+    from config import get_settings
+    from stages.s8_compute import UnsupportedSpecError
+
+    settings = get_settings()
+    # Poison B1 6.1's value_expr with an unknown op; snapshot the cache
+    # so the test cleans up after itself.
+    extraction_path = settings.workspace_dir / "extractions" / "B1.json"
+    payload = json.loads(extraction_path.read_text(encoding="utf-8"))
+    original = extraction_path.read_text(encoding="utf-8")
+    for cov in payload["output"]["covenants"]:
+        if str(cov["clause_id"]) == "6.1":
+            cov["value_expr"] = {"op": "concat_median", "role": "revenue"}
+            cov["threshold"] = "1.75"
+            break
+    extraction_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    try:
+        submission = run_pipeline()
+    finally:
+        extraction_path.write_text(original, encoding="utf-8")
+
+    b1_61 = submission["answers"]["B1"]["6.1"]
+    assert b1_61["status"] == "COMPLIANT", "unsupported cell must fall back to safe baseline status"
+    assert b1_61["actual"] == 1.75, "unsupported cell must adopt extracted threshold as actual"
+    assert b1_61["evidence_txn_id"] is None
+    # No extra keys anywhere in the submission — schema must stay CASE-valid.
+    for scenario_clauses in submission["answers"].values():
+        for cell in scenario_clauses.values():
+            assert set(cell.keys()) == {"status", "actual", "evidence_txn_id"}
+    # Other B1 cells still computed with real values (not baseline 0.01).
+    assert submission["answers"]["B1"]["6.2"]["actual"] != 0.01
+    assert submission["answers"]["B1"]["6.3"]["actual"] != 0.01
+
+
 def test_compute_health_signals_from_workspace(tmp_path: Path):
     """Every run must emit the internal signals we use to pick between
     runs on 9 August — that is, without any ground truth."""

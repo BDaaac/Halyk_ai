@@ -1,0 +1,79 @@
+{
+  "output": {
+    "6.1": {
+      "capital_assets_to_unrestricted_subsidiaries": [
+        "TXN-P9-0025",
+        "TXN-P9-0017"
+      ],
+      "capital_expenditures": [
+        "TXN-P9-0035"
+      ]
+    },
+    "6.2": {
+      "revenue": [
+        "TXN-P9-0012"
+      ]
+    },
+    "6.3": {
+      "related_party": [
+        "TXN-P9-0040"
+      ]
+    },
+    "uncertain": [
+      {
+        "txn_id": "TXN-P9-0025",
+        "role": "capital_assets_to_unrestricted_subsidiaries",
+        "note": "передача оборудования дочерней структуре — предполагается неограниченная дочерняя организация"
+      },
+      {
+        "txn_id": "TXN-P9-0017",
+        "role": "capital_assets_to_unrestricted_subsidiaries",
+        "note": "передача оборудования дочерней структуре — предполагается неограниченная дочерняя организация"
+      },
+      {
+        "txn_id": "TXN-P9-0035",
+        "role": "capital_expenditures",
+        "note": "единственная явная покупка оборудования (capex) в реестре"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 10501,
+    "output_tokens": 428
+  },
+  "soft_warnings": [
+    "6.1/capital_assets_to_unrestricted_subsidiaries: weak description overlap for TXN-P9-0025",
+    "6.1/capital_assets_to_unrestricted_subsidiaries: weak description overlap for TXN-P9-0017",
+    "6.1/capital_expenditures: weak description overlap for TXN-P9-0035",
+    "6.2/revenue: weak description overlap for TXN-P9-0012",
+    "6.3/related_party: weak description overlap for TXN-P9-0040",
+    "TXN-9499-0016 in EUR was not selected for any role",
+    "TXN-P2-0008 in EUR was not selected for any role",
+    "TXN-9606-0025 in EUR was not selected for any role",
+    "TXN-9244-0017 in EUR was not selected for any role",
+    "TXN-P1-0049 in EUR was not selected for any role",
+    "TXN-9173-0018 in EUR was not selected for any role",
+    "TXN-P9-0038 in EUR was not selected for any role",
+    "TXN-P3-0024 in EUR was not selected for any role",
+    "TXN-P7-0051 in EUR was not selected for any role",
+    "TXN-P5-0047 in EUR was not selected for any role",
+    "TXN-P10-0057 in EUR was not selected for any role",
+    "TXN-9486-0034 in EUR was not selected for any role",
+    "TXN-B4-0049 in EUR was not selected for any role",
+    "TXN-9553-0013 in EUR was not selected for any role",
+    "TXN-9813-0044 in EUR was not selected for any role",
+    "TXN-9083-0033 in EUR was not selected for any role",
+    "TXN-B1-0038 in EUR was not selected for any role",
+    "TXN-P6-0042 in EUR was not selected for any role",
+    "TXN-9203-0036 in EUR was not selected for any role",
+    "TXN-9807-0030 in EUR was not selected for any role",
+    "TXN-P8-0041 in EUR was not selected for any role",
+    "TXN-9610-0035 in EUR was not selected for any role",
+    "TXN-B1-0050 in EUR was not selected for any role",
+    "TXN-9224-0002 in EUR was not selected for any role",
+    "TXN-9535-0018 in EUR was not selected for any role",
+    "TXN-P1-0005 in EUR was not selected for any role",
+    "TXN-P8-0025 in EUR was not selected for any role",
+    "TXN-P1-0018 in EUR was not selected for any role"
+  ]
+}

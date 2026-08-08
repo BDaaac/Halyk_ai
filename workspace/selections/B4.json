@@ -1,0 +1,60 @@
+{
+  "output": {
+    "6.1": {},
+    "6.2": {
+      "capex": [
+        "TXN-B4-0021"
+      ]
+    },
+    "6.3": {
+      "related_party": [
+        "TXN-B4-0009"
+      ]
+    },
+    "uncertain": [
+      {
+        "txn_id": "TXN-B4-0026",
+        "role": "revenue",
+        "note": "исключена adjustments как cutoff, право собственности переходит в 2026, не включена в Q4 2025 выручку"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 11182,
+    "output_tokens": 232
+  },
+  "soft_warnings": [
+    "stage7 accepted on retry after semantic: semantic: 6.1: uncertain transaction TXN-B4-0026 for role 'revenue' was not placed here; 6.3: role 'related_party' describes outgoing payments but selected transaction TXN-B4-0030 has positive amount (+2048994.35)",
+    "stage7 salvage: 6.1 dropped (uncertain transaction TXN-B4-0026 for role 'revenue' was not placed here)",
+    "6.2/capex: weak description overlap for TXN-B4-0021",
+    "6.3/related_party: weak description overlap for TXN-B4-0009",
+    "TXN-9499-0016 in EUR was not selected for any role",
+    "TXN-P2-0008 in EUR was not selected for any role",
+    "TXN-9606-0025 in EUR was not selected for any role",
+    "TXN-9244-0017 in EUR was not selected for any role",
+    "TXN-P1-0049 in EUR was not selected for any role",
+    "TXN-9173-0018 in EUR was not selected for any role",
+    "TXN-P9-0038 in EUR was not selected for any role",
+    "TXN-P3-0024 in EUR was not selected for any role",
+    "TXN-P7-0051 in EUR was not selected for any role",
+    "TXN-P5-0047 in EUR was not selected for any role",
+    "TXN-P10-0057 in EUR was not selected for any role",
+    "TXN-9486-0034 in EUR was not selected for any role",
+    "TXN-B4-0049 in EUR was not selected for any role",
+    "TXN-9553-0013 in EUR was not selected for any role",
+    "TXN-9813-0044 in EUR was not selected for any role",
+    "TXN-9083-0033 in EUR was not selected for any role",
+    "TXN-B1-0038 in EUR was not selected for any role",
+    "TXN-P6-0042 in EUR was not selected for any role",
+    "TXN-9203-0036 in EUR was not selected for any role",
+    "TXN-9807-0030 in EUR was not selected for any role",
+    "TXN-P8-0041 in EUR was not selected for any role",
+    "TXN-9610-0035 in EUR was not selected for any role",
+    "TXN-B1-0050 in EUR was not selected for any role",
+    "TXN-9224-0002 in EUR was not selected for any role",
+    "TXN-9535-0018 in EUR was not selected for any role",
+    "TXN-P1-0005 in EUR was not selected for any role",
+    "TXN-P8-0025 in EUR was not selected for any role",
+    "TXN-P1-0018 in EUR was not selected for any role"
+  ]
+}

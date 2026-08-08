@@ -1,0 +1,107 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "capital_assets_to_unrestricted_subsidiaries"
+            },
+            {
+              "op": "sum",
+              "role": "capital_expenditures"
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "0.15",
+        "role_descriptions": {
+          "capital_assets_to_unrestricted_subsidiaries": "Совокупная стоимость капитальных активов, переданных Неограниченным дочерним организациям",
+          "capital_expenditures": "Совокупные капитальные затраты Заёмщика"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "не допускать, чтобы совокупная стоимость капитальных активов, переданных Неограниченным дочерним организациям за период с 2025-01-01 по 2025-12-31, превышала 0.15x совокупных капитальных затрат Заёмщика за этот период"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "revenue"
+        },
+        "operator": ">=",
+        "threshold": "6900000.00",
+        "role_descriptions": {
+          "revenue": "Совокупная выручка по статье «Выручка»"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "совокупная выручка по статье «Выручка» за период с 2025-01-01 по 2025-12-31 составляла не менее $6,900,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "sum",
+          "role": "related_party"
+        },
+        "operator": "<=",
+        "threshold": "225000.00",
+        "role_descriptions": {
+          "related_party": "Ограниченные платежи в пользу связанных сторон"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "не вправе совершать Ограниченные платежи в пользу связанных сторон на совокупную сумму свыше $225,000.00"
+        }
+      }
+    ],
+    "adjustments": [],
+    "related_parties": {
+      "threshold_percent": "34.0",
+      "entities": [
+        {
+          "name": "Kazakhmys Smelting JSC",
+          "share_percent": "6.9"
+        },
+        {
+          "name": "Ulytau Capital LLP",
+          "share_percent": "39.7"
+        },
+        {
+          "name": "Ural Haul Systems LLP",
+          "share_percent": "31.4"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 34.0% и более голосующих прав, признаются связанными сторонами для целей Договора"
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 9199,
+    "output_tokens": 1099
+  },
+  "soft_warnings": []
+}

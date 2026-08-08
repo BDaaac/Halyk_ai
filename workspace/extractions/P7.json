@@ -1,0 +1,154 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "add",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "taxes"
+                },
+                {
+                  "op": "sum",
+                  "role": "utilities"
+                }
+              ]
+            },
+            {
+              "op": "subtract",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "revenue"
+                },
+                {
+                  "op": "sum",
+                  "role": "opex"
+                }
+              ]
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "0.30",
+        "role_descriptions": {
+          "taxes": "Налоги",
+          "utilities": "Коммунальные расходы",
+          "revenue": "Выручка",
+          "opex": "Операционные расходы"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "обеспечивает, чтобы отношение суммы Налогов и Коммунальных расходов к EBITDA не превышало 0.30x"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "revenue"
+        },
+        "operator": ">=",
+        "threshold": "8700000.00",
+        "role_descriptions": {
+          "revenue": "Выручка"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "обязуется обеспечить, чтобы совокупные поступления по статье «Выручка» за период с 2025-01-01 по 2025-12-31 составляли не менее $8,700,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "sum",
+          "role": "related_party"
+        },
+        "operator": "<=",
+        "threshold": "275000.00",
+        "role_descriptions": {
+          "related_party": "Платежи связанным сторонам"
+        },
+        "applicability": null,
+        "exception": {
+          "raw_text": "За исключением случаев, прямо согласованных Кредитором в письменной форме",
+          "expr": null
+        },
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "не вправе прямо или косвенно перечислять, передавать или иным образом предоставлять связанным сторонам суммы, совокупный размер которых за период с 2025-01-01 по 2025-12-31 превышает $275,000.00"
+        }
+      }
+    ],
+    "adjustments": [
+      {
+        "type": "amount_correction",
+        "match": {
+          "txn_id": "TXN-P7-0033",
+          "amount": "486204.19",
+          "counterparty": "State Revenue Committee"
+        },
+        "sign": "expense",
+        "source": {
+          "doc_id": "extra_documents",
+          "quote": "сумма не отражена в выгрузке реестра; фактическая сумма операции составляет $486,204.19 (расход)"
+        }
+      }
+    ],
+    "related_parties": {
+      "threshold_percent": "32.0",
+      "entities": [
+        {
+          "name": "Atyrau Energy Supply JSC",
+          "share_percent": "8.8"
+        },
+        {
+          "name": "Atyrau Holding Group L.L.P.",
+          "share_percent": "37.9"
+        },
+        {
+          "name": "Atyrau Pump Station Services LLP",
+          "share_percent": "29.3"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 32.0% и более голосующих прав, признаются связанными сторонами для целей Договора"
+      }
+    },
+    "document_facts": [
+      {
+        "fact_name": "accrued_but_unpaid_taxes",
+        "value": "<не указано>",
+        "description": "Начисленные, но не уплаченные в течение периода налоги",
+        "source": {
+          "doc_id": "covenant_article",
+          "quote": "Начисленные, но не уплаченные в течение периода налоги учитываются наравне с уплаченными; их величина подтверждается учётными данными казначейства Заёмщика"
+        }
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 9626,
+    "output_tokens": 1428
+  },
+  "soft_warnings": []
+}

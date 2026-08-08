@@ -1,0 +1,177 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "insurance_premiums"
+            },
+            {
+              "op": "add",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "rent"
+                },
+                {
+                  "op": "sum",
+                  "role": "utilities"
+                }
+              ]
+            }
+          ]
+        },
+        "operator": ">=",
+        "threshold": "0.20",
+        "role_descriptions": {
+          "insurance_premiums": "Страховые премии",
+          "rent": "Арендные расходы",
+          "utilities": "Коммунальные расходы"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "отношение Страховых премий к сумме Арендных и Коммунальных расходов составляло не менее 0.20x"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "subtract",
+          "args": [
+            {
+              "op": "sum",
+              "role": "revenue"
+            },
+            {
+              "op": "max",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "payroll"
+                },
+                {
+                  "op": "sum",
+                  "role": "taxes"
+                }
+              ]
+            }
+          ]
+        },
+        "operator": ">=",
+        "threshold": "5000000.00",
+        "role_descriptions": {
+          "revenue": "Выручка",
+          "payroll": "Расходы на оплату труда",
+          "taxes": "Налоги"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "Выручка за вычетом наибольшей из величин Расходов на оплату труда и Налогов составляла не менее $5,000,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "related_party"
+            },
+            {
+              "op": "sum",
+              "role": "revenue"
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "0.05",
+        "role_descriptions": {
+          "related_party": "Ограниченные платежи в пользу аффилированных лиц",
+          "revenue": "Выручка"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "совокупные Ограниченные платежи в пользу аффилированных лиц составили более 0.05x от выручки"
+        }
+      }
+    ],
+    "adjustments": [
+      {
+        "type": "reclassification",
+        "match": {
+          "txn_id": null,
+          "amount": "142118.64",
+          "counterparty": "Tengiz Risk Engineering Bureau"
+        },
+        "from_role": "opex",
+        "to_role": "insurance_premiums",
+        "accepted": true,
+        "source": {
+          "doc_id": "audit_notes",
+          "section": "7.1",
+          "quote": "первоначально учтённая как Операционные расходы, переклассифицирована для целей соблюдения ковенантов как Страховые премии"
+        }
+      },
+      {
+        "type": "reclassification",
+        "match": {
+          "txn_id": "TXN-P10-0012",
+          "amount": "118447.52",
+          "counterparty": null
+        },
+        "from_role": "opex",
+        "to_role": "insurance_premiums",
+        "accepted": false,
+        "source": {
+          "doc_id": "audit_notes",
+          "section": "7.2",
+          "quote": "рассматривалась на предмет возможной переклассификации как Страховые премии; по итогам разъяснений руководства первоначальная классификация сохраняется"
+        }
+      }
+    ],
+    "related_parties": {
+      "threshold_percent": "36.0",
+      "entities": [
+        {
+          "name": "Saryarka Capital Partners LLP",
+          "share_percent": "42.3"
+        },
+        {
+          "name": "Saryarka Terminal Properties LLP",
+          "share_percent": "33.5"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "section": "Бенефициарное владение и контроль",
+        "quote": "Организации, в которых Группа владеет 36.0% и более голосующих прав, признаются связанными сторонами"
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 9078,
+    "output_tokens": 1542
+  },
+  "soft_warnings": []
+}

@@ -1,0 +1,133 @@
+{
+  "output": {
+    "covenants": [
+      {
+        "clause_id": "6.1",
+        "value_expr": {
+          "op": "divide",
+          "args": [
+            {
+              "op": "sum",
+              "role": "capital_expenditures"
+            },
+            {
+              "op": "add",
+              "args": [
+                {
+                  "op": "sum",
+                  "role": "opex"
+                },
+                {
+                  "op": "sum",
+                  "role": "rent"
+                }
+              ]
+            }
+          ]
+        },
+        "operator": "<=",
+        "threshold": "0.42",
+        "role_descriptions": {
+          "capital_expenditures": "совокупные капитальные затраты",
+          "opex": "операционные расходы",
+          "rent": "арендные платежи"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.1",
+          "quote": "Коэффициент капиталоёмкости означает отношение совокупных капитальных затрат за период к сумме операционных расходов и арендных платежей за тот же период"
+        }
+      },
+      {
+        "clause_id": "6.2",
+        "value_expr": {
+          "op": "sum",
+          "role": "revenue"
+        },
+        "operator": ">=",
+        "threshold": "7100000.00",
+        "role_descriptions": {
+          "revenue": "Выручка"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": false,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.2",
+          "quote": "обязуется поддерживать совокупный объём таких поступлений за период с 2025-01-01 по 2025-12-31 на уровне не менее $7,100,000.00"
+        }
+      },
+      {
+        "clause_id": "6.3",
+        "value_expr": {
+          "op": "sum",
+          "role": "related_party"
+        },
+        "operator": "<=",
+        "threshold": "450000.00",
+        "role_descriptions": {
+          "related_party": "платежи в пользу связанных сторон"
+        },
+        "applicability": null,
+        "exception": null,
+        "uses_related_parties": true,
+        "supported": true,
+        "source": {
+          "doc_id": "covenant_article",
+          "section": "6.3",
+          "quote": "обязуется не допускать, чтобы совокупный объём платежей в пользу связанных сторон за период с 2025-01-01 по 2025-12-31 превышал $450,000.00"
+        }
+      }
+    ],
+    "adjustments": [
+      {
+        "type": "cutoff",
+        "match": {
+          "txn_id": "TXN-P1-0045",
+          "amount": null,
+          "counterparty": null
+        },
+        "service_period_start": "2026-01-15",
+        "service_period_end": "2026-03-20",
+        "reason": "Обследование причальной стенки проводится в первом квартале 2026 года",
+        "source": {
+          "doc_id": "audit_notes",
+          "quote": "Операция TXN-P1-0045 (счёт-фактура от 2025-08-12) относится к услугам, оказанным в период с 2026-01-15 по 2026-03-20"
+        }
+      }
+    ],
+    "related_parties": {
+      "threshold_percent": "20.0",
+      "entities": [
+        {
+          "name": "Aktau Holdings LLP",
+          "share_percent": "34.5"
+        },
+        {
+          "name": "Kaspi Marine Engineering LLP",
+          "share_percent": "18.7"
+        },
+        {
+          "name": "Ural Crane Works LLP",
+          "share_percent": "6.2"
+        }
+      ],
+      "source": {
+        "doc_id": "kyc",
+        "quote": "Организации, в которых Группа владеет 20.0% и более голосующих прав, признаются связанными сторонами для целей Договора"
+      }
+    },
+    "document_facts": []
+  },
+  "usage": {
+    "input_tokens": 8769,
+    "output_tokens": 1282
+  },
+  "soft_warnings": []
+}

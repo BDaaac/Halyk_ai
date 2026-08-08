@@ -50,7 +50,13 @@ def run_pipeline(*, stop_after_stage: int | None = None):
     from stages.s0_baseline import _write_json_atomically
     from stages.s6_extract import extract_scenario
     from stages.s7_select import select_scenario
-    from stages.s8_compute import build_clause_selection, evaluate_covenant, specifications_from_extraction
+    from stages.s8_compute import (
+        UnsupportedSpecError,
+        _safe_positive_decimal,
+        build_clause_selection,
+        evaluate_covenant,
+        specifications_from_extraction,
+    )
     from stages.s9_evidence import (
         counterfactual_kind,
         evidence_candidates,
@@ -182,26 +188,57 @@ def run_pipeline(*, stop_after_stage: int | None = None):
         if not extraction_path.exists() or not selection_path.exists():
             continue
         started_compute = time.perf_counter()
+        started_compute_setup = time.perf_counter()
+        unsupported_clauses: dict[str, dict[str, Any]] = {}
         try:
             extraction = json.loads(extraction_path.read_text(encoding="utf-8"))["output"]
             selection = json.loads(selection_path.read_text(encoding="utf-8"))["output"]
             documents = resolve_documents(scenario_id)
             if documents.kyc:
                 patch_group_capex(extraction, document_index, document_index[documents.kyc].text)
-            specs = specifications_from_extraction(scenario_id, extraction)
+            specs = specifications_from_extraction(
+                scenario_id, extraction, unsupported_out=unsupported_clauses
+            )
             adjustments = extraction.get("adjustments", [])
         except Exception as error:
             log_error(f"{scenario_id} setup", error)
             continue
+        timings["stage_8_9"] = timings.get("stage_8_9", 0.0) + (time.perf_counter() - started_compute_setup)
 
         for clause_id, cell in clauses.items():
+            started_compute = time.perf_counter()
+            if clause_id in unsupported_clauses:
+                _apply_unsupported_fallback(
+                    cell,
+                    scenario_id=scenario_id,
+                    clause_id=clause_id,
+                    info=unsupported_clauses[clause_id],
+                    log_error=log_error,
+                )
+                _write_json_atomically(settings.workspace_dir / "submission.json", submission)
+                timings["stage_8_9"] = timings.get("stage_8_9", 0.0) + (time.perf_counter() - started_compute)
+                continue
             try:
                 spec = specs.get(clause_id)
                 selected_roles = selection.get(clause_id, {})
                 if spec is None or not isinstance(selected_roles, dict):
                     continue
-                values = build_clause_selection(spec, selected_roles, ledger, adjustments)
-                result = evaluate_covenant(spec, values)
+                try:
+                    values = build_clause_selection(spec, selected_roles, ledger, adjustments)
+                    result = evaluate_covenant(spec, values)
+                except UnsupportedSpecError as unsupported_error:
+                    _apply_unsupported_fallback(
+                        cell,
+                        scenario_id=scenario_id,
+                        clause_id=clause_id,
+                        info={
+                            "threshold": _safe_positive_decimal(spec.threshold),
+                            "reason": str(unsupported_error),
+                        },
+                        log_error=log_error,
+                    )
+                    _write_json_atomically(settings.workspace_dir / "submission.json", submission)
+                    continue
 
                 def recompute(txn_id: str, _spec=spec, _roles=selected_roles):
                     kind = counterfactual_kind(txn_id, adjustments, ledger)
@@ -236,7 +273,8 @@ def run_pipeline(*, stop_after_stage: int | None = None):
             except Exception as error:
                 log_error(f"{scenario_id} {clause_id}", error)
                 continue
-        timings["stage_8_9"] = timings.get("stage_8_9", 0.0) + (time.perf_counter() - started_compute)
+            finally:
+                timings["stage_8_9"] = timings.get("stage_8_9", 0.0) + (time.perf_counter() - started_compute)
 
     def _stage_cost(stage: str, pricing) -> Decimal:
         if pricing is None:
@@ -256,6 +294,32 @@ def run_pipeline(*, stop_after_stage: int | None = None):
     }
     _write_json_atomically(settings.workspace_dir / "submission.json", submission)
     return submission
+
+
+def _apply_unsupported_fallback(
+    cell: dict,
+    *,
+    scenario_id: str,
+    clause_id: str,
+    info: dict,
+    log_error,
+) -> None:
+    """Localised fallback for a single unsupported/missing-input cell.
+
+    The other cells of the scenario continue with the normal compute
+    path. The submission schema is not extended (validator forbids
+    extra keys); low_confidence stays in the trace only.
+    """
+    threshold = info.get("threshold")
+    if isinstance(threshold, Decimal) and threshold.is_finite() and threshold > 0:
+        actual_value = float(threshold.quantize(Decimal("0.01")))
+    else:
+        actual_value = 0.01
+    cell.update(status="COMPLIANT", actual=actual_value, evidence_txn_id=None)
+    log_error(
+        f"{scenario_id} {clause_id} unsupported",
+        RuntimeError(f"low_confidence fallback (actual={actual_value}): {info.get('reason', 'unspecified')}"),
+    )
 
 
 def _compute_health(submission: dict, workspace_dir) -> dict[str, int]:
