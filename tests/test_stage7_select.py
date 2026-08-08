@@ -4,7 +4,7 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from stages.s7_select import select_scenario
+from stages.s7_select import apply_retry_conservatism, select_scenario
 
 
 class FakeClient:
@@ -409,3 +409,95 @@ def test_stage7_sends_audited_foreign_amount_to_model_in_usd(tmp_path):
     transactions = client.calls[0]["user"].split("<transactions>", 1)[1].split("</transactions>", 1)[0]
     assert "710945.73" in transactions
     assert '"currency":"USD"' in transactions
+
+
+def test_apply_retry_conservatism_strips_flipped_uncertain_inclusion():
+    """Attempt-1 flagged TXN-Y in uncertain[opex] but did NOT put it into
+    opex. The retry (accepted) then placed it. The rule removes it and
+    records a note. Nothing else in the selection is touched."""
+    output = {
+        "6.1": {"revenue": ["TXN-X"], "opex": ["TXN-BASE", "TXN-Y"]},
+        "6.2": {"payroll": ["TXN-P"]},
+        "uncertain": [],
+    }
+    soft_warnings = [
+        "stage7 accepted on retry after semantic: semantic: 6.1: "
+        "uncertain transaction TXN-Y for role 'opex' was not placed here",
+    ]
+    modified, notes = apply_retry_conservatism(output, soft_warnings)
+    assert modified["6.1"]["opex"] == ["TXN-BASE"]
+    assert modified["6.1"]["revenue"] == ["TXN-X"]
+    assert modified["6.2"] == {"payroll": ["TXN-P"]}
+    assert any("removed TXN-Y from 6.1/opex" in note for note in notes)
+
+
+def test_apply_retry_conservatism_is_noop_when_retry_kept_exclusion():
+    """If the txn the model flagged in attempt-1 is NOT in the final
+    role, the rule is silent — retry already agreed."""
+    output = {
+        "6.1": {"revenue": ["TXN-X"], "opex": ["TXN-BASE"]},
+        "uncertain": [],
+    }
+    soft_warnings = [
+        "stage7 accepted on retry after semantic: semantic: 6.1: "
+        "uncertain transaction TXN-Y for role 'opex' was not placed here",
+    ]
+    modified, notes = apply_retry_conservatism(output, soft_warnings)
+    assert modified == output
+    assert notes == []
+
+
+def test_apply_retry_conservatism_ignores_direction_and_shape_retries():
+    """Only the uncertain-substitution wording is actioned. Direction
+    mismatch and shape retries have different remediation paths."""
+    output = {"6.1": {"restricted_payment": ["TXN-Y"]}, "uncertain": []}
+    soft_warnings = [
+        "stage7 accepted on retry after semantic: semantic: 6.1: "
+        "role 'restricted_payment' describes outgoing payments but "
+        "selected transaction TXN-Y has positive amount (+2000000.00)",
+        "stage7 accepted on retry after shape: shape: ValueError: bad schema",
+    ]
+    modified, notes = apply_retry_conservatism(output, soft_warnings)
+    assert modified == output
+    assert notes == []
+
+
+def test_stage7_uncertain_substitution_retry_gets_conservatism_stripped(tmp_path):
+    """End-to-end: attempt-1 puts TXN-T1-0001 in uncertain[revenue] but
+    also fills opex non-emptily (Check 2 wording, not Check 1). The retry
+    places TXN-T1-0001 in revenue. The final output must have revenue
+    empty — the rule undoes the flip — and the note must be recorded."""
+    extraction = {
+        "covenants": [{
+            "clause_id": "6.1",
+            "role_descriptions": {"revenue": "Revenue", "opex": "Operating maintenance"},
+        }],
+        "adjustments": [],
+        "related_parties": {"threshold_percent": "20.0", "entities": []},
+    }
+    ledger = pd.DataFrame([
+        {"txn_id": "TXN-T1-0001", "description": "Revenue from core operations", "amount": 10, "counterparty": "X"},
+        {"txn_id": "TXN-T1-0002", "description": "Operating maintenance", "amount": -4, "counterparty": "Y"},
+        {"txn_id": "TXN-T1-0003", "description": "Revenue special", "amount": 20, "counterparty": "Z"},
+    ])
+    first_bad = {
+        "6.1": {"revenue": ["TXN-T1-0003"], "opex": ["TXN-T1-0002"]},
+        "uncertain": [{"txn_id": "TXN-T1-0001", "role": "revenue", "note": "borderline"}],
+    }
+    second_retry = {
+        "6.1": {"revenue": ["TXN-T1-0003", "TXN-T1-0001"], "opex": ["TXN-T1-0002"]},
+        "uncertain": [],
+    }
+    client = QueuedFakeClient([first_bad, second_retry])
+
+    result = select_scenario(
+        scenario_id="T1",
+        extraction=extraction,
+        ledger=ledger,
+        client=client,
+        cache_dir=tmp_path / "selections",
+    )
+
+    assert result.output["6.1"]["revenue"] == ["TXN-T1-0003"]
+    assert result.output["6.1"]["opex"] == ["TXN-T1-0002"]
+    assert any("retry conservatism" in w and "TXN-T1-0001" in w for w in result.soft_warnings)

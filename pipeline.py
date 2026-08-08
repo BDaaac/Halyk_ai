@@ -49,7 +49,7 @@ def run_pipeline(*, stop_after_stage: int | None = None):
 
     from stages.s0_baseline import _write_json_atomically
     from stages.s6_extract import extract_scenario
-    from stages.s7_select import select_scenario
+    from stages.s7_select import load_selection_from_cache, select_scenario
     from stages.s8_compute import (
         UnsupportedSpecError,
         _safe_positive_decimal,
@@ -192,7 +192,15 @@ def run_pipeline(*, stop_after_stage: int | None = None):
         unsupported_clauses: dict[str, dict[str, Any]] = {}
         try:
             extraction = json.loads(extraction_path.read_text(encoding="utf-8"))["output"]
-            selection = json.loads(selection_path.read_text(encoding="utf-8"))["output"]
+            cached_selection = load_selection_from_cache(
+                scenario_id=scenario_id,
+                extraction=extraction,
+                ledger=ledger,
+                cache_dir=settings.workspace_dir / "selections",
+            )
+            if cached_selection is None:
+                raise RuntimeError(f"{scenario_id}: selection cache missing after stage 7")
+            selection = cached_selection.output
             documents = resolve_documents(scenario_id)
             if documents.kyc:
                 patch_group_capex(extraction, document_index, document_index[documents.kyc].text)

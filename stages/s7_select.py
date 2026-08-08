@@ -342,6 +342,40 @@ def _write_cache(path: Path, payload: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def load_selection_from_cache(
+    *,
+    scenario_id: str,
+    extraction: dict[str, Any],
+    ledger: pd.DataFrame,
+    cache_dir: Path,
+) -> SelectionResult | None:
+    """Load a cached selection and apply post-hoc rules that must run on
+    every read (retry conservatism, deterministic guards). Returns
+    ``None`` when no cache exists — caller decides whether to spend an
+    API call."""
+    cache_path = cache_dir / f"{scenario_id}.json"
+    if not cache_path.exists():
+        return None
+    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    validate_selection_shape(cached["output"])
+    scoped_ledger = ledger[_scenario_mask(ledger, scenario_id)].reset_index(drop=True)
+    prompt_ledger = normalize_ledger_to_usd(scoped_ledger, extraction.get("adjustments", []))
+    # Cached selections have already been salvaged (dropped clauses were
+    # replaced with {}), so per-clause validation would only produce
+    # warnings — skip it and reuse the cached output.
+    conservative_output, conservative_notes = apply_retry_conservatism(
+        cached["output"], cached.get("soft_warnings", [])
+    )
+    output, warnings = apply_deterministic_guards(
+        output=conservative_output, ledger=prompt_ledger, extraction=extraction
+    )
+    return SelectionResult(
+        output=output,
+        usage=cached["usage"],
+        soft_warnings=cached["soft_warnings"] + conservative_notes + warnings,
+    )
+
+
 def select_scenario(
     *,
     scenario_id: str,
@@ -357,14 +391,14 @@ def select_scenario(
     scoped_ledger = ledger[_scenario_mask(ledger, scenario_id)].reset_index(drop=True)
     prompt_ledger = normalize_ledger_to_usd(scoped_ledger, extraction.get("adjustments", []))
     validation_ledger = normalize_ledger_to_usd(ledger, extraction.get("adjustments", []))
-    if cache_path.exists():
-        cached = json.loads(cache_path.read_text(encoding="utf-8"))
-        validate_selection_shape(cached["output"])
-        # Cached selections have already been salvaged (dropped clauses
-        # were replaced with {}), so per-clause validation would only
-        # produce warnings — skip it and reuse the cached output.
-        output, warnings = apply_deterministic_guards(output=cached["output"], ledger=prompt_ledger, extraction=extraction)
-        return SelectionResult(output=output, usage=cached["usage"], soft_warnings=cached["soft_warnings"] + warnings)
+    cached_result = load_selection_from_cache(
+        scenario_id=scenario_id,
+        extraction=extraction,
+        ledger=ledger,
+        cache_dir=cache_dir,
+    )
+    if cached_result is not None:
+        return cached_result
 
     prompt_user = build_context(extraction=extraction, ledger=prompt_ledger)
 
@@ -422,18 +456,22 @@ def select_scenario(
             continue
 
         salvaged_output, salvage_warnings = _salvage_clauses(response.output, extraction, prompt_ledger)
-        output, guard_warnings = apply_deterministic_guards(
-            output=salvaged_output, ledger=prompt_ledger, extraction=extraction
-        )
         retry_notes: list[str] = []
         for prior in attempts:
             kind = prior.get("kind", "unknown")
             retry_notes.append(f"stage7 accepted on retry after {kind}: {prior['error']}")
+        conservative_output, conservative_notes = apply_retry_conservatism(
+            salvaged_output, retry_notes
+        )
+        output, guard_warnings = apply_deterministic_guards(
+            output=conservative_output, ledger=prompt_ledger, extraction=extraction
+        )
         result = SelectionResult(
             output=output,
             usage=response.usage,
             soft_warnings=retry_notes
             + salvage_warnings
+            + conservative_notes
             + guard_warnings
             + validate_selection(
                 scenario_id=scenario_id,
@@ -472,6 +510,47 @@ def _semantic_repair_note(errors: dict[str, str]) -> str:
             f"the uncertainty consistently."
         )
     return "\n".join(lines)
+
+
+_RETRY_UNCERTAIN_PATTERN = re.compile(
+    r"(?P<cid>[^\s:;][^:;]*):\s+uncertain transaction "
+    r"(?P<txn>TXN-[A-Za-z0-9-]+) for role '(?P<role>[^']+)' was not placed here"
+)
+
+
+def apply_retry_conservatism(
+    output: dict[str, Any], soft_warnings: list[str]
+) -> tuple[dict[str, Any], list[str]]:
+    """Undo retry's inversion of an attempt-1 uncertain-role-decline.
+
+    When attempt-1 lists a txn under ``uncertain`` for role R but leaves
+    R empty, the model has explicitly declined to place it. A neutral
+    repair retry can flip that judgment under prompt pressure. On public
+    data the flip has been wrong every time it happened, and a no-op
+    every time the retry preserved the exclusion. Strip such flipped
+    inclusions post-retry; do nothing when the retry already agreed.
+    """
+    modified = deepcopy(output)
+    notes: list[str] = []
+    for warning in soft_warnings:
+        if "accepted on retry" not in warning:
+            continue
+        for match in _RETRY_UNCERTAIN_PATTERN.finditer(warning):
+            clause_id = match.group("cid").strip()
+            txn_id = match.group("txn")
+            role = match.group("role")
+            roles = modified.get(clause_id)
+            if not isinstance(roles, dict):
+                continue
+            role_list = roles.get(role)
+            if not isinstance(role_list, list) or txn_id not in role_list:
+                continue
+            roles[role] = [t for t in role_list if t != txn_id]
+            notes.append(
+                f"stage7 retry conservatism: removed {txn_id} from "
+                f"{clause_id}/{role} (attempt-1 flagged uncertain, retry flipped)"
+            )
+    return modified, notes
 
 
 def _salvage_clauses(
