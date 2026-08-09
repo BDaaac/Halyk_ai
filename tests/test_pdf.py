@@ -77,3 +77,70 @@ def test_version_status_explicit_russian_supersession_still_flagged():
     assert _version_status(
         "Настоящий договор утратил силу с 1 января 2025 года."
     ) == "superseded"
+
+
+def test_accounts_in_text_finds_arbitrary_ledger_prefix():
+    """A private ledger may use account tokens whose prefix is not ACC
+    (e.g. TELE-XXXX for a telco). Document→account association must fall
+    out of the ledger's own account_id column, not a hardcoded regex."""
+    from stages.s2_pdf import _accounts_in_text
+
+    tokens = ["ACC-7001", "TELE-1234", "MFG-9002"]
+    text = (
+        "Договор № 2025-142\nСчёт заёмщика: TELE-1234.\n"
+        "Историческая ссылка на ACC-7001 приложена в приложении А."
+    )
+    result = _accounts_in_text(text, tokens)
+
+    assert "TELE-1234" in result
+    assert "ACC-7001" in result
+    assert "MFG-9002" not in result
+
+
+def test_accounts_in_text_longer_token_wins_over_prefix_collision():
+    """Sorting tokens longest-first prevents a shorter token that is a
+    prefix of a longer one from masking it in the accounts list."""
+    from stages.s2_pdf import _accounts_in_text
+
+    # Longest-first order is what _ledger_account_tokens returns.
+    tokens = sorted(["ACC-7001", "ACC-70011"], key=lambda t: (-len(t), t))
+    text = "The referenced account is ACC-70011 (not the older ACC-7001)."
+    result = _accounts_in_text(text, tokens)
+
+    # Both appear in the text (ACC-7001 is a substring of ACC-70011).
+    # We accept both — the routing layer picks the account whose scenario
+    # actually matches the ledger, so a spurious substring hit cannot
+    # silently reroute a document.
+    assert "ACC-70011" in result
+    assert "ACC-7001" in result
+    assert result.index("ACC-70011") < result.index("ACC-7001")
+
+
+def test_ledger_account_tokens_reads_column_and_sorts_longest_first(tmp_path):
+    """Ledger account tokens are harvested from the account_id column,
+    duplicates dropped, and returned longest-first for stable matching."""
+    from stages.s2_pdf import _ledger_account_tokens
+
+    ledger = tmp_path / "master_ledger_2025.csv"
+    ledger.write_text(
+        "txn_id,date,account_id,counterparty,description,amount,currency\n"
+        "TXN-A-01,2025-01-01,ACC-7001,X,y,100,USD\n"
+        "TXN-A-02,2025-01-02,ACC-7001,X,y,200,USD\n"
+        "TXN-B-01,2025-01-03,TELE-1234,Z,w,300,USD\n"
+        "TXN-C-01,2025-01-04,MFG-9002,Q,v,400,USD\n",
+        encoding="utf-8",
+    )
+    tokens = _ledger_account_tokens(ledger)
+
+    assert set(tokens) == {"ACC-7001", "TELE-1234", "MFG-9002"}
+    # longest-first (with alphabetic tie-break) so 'ACC-70011' would come
+    # before 'ACC-7001' if both existed
+    assert tokens == sorted(tokens, key=lambda t: (-len(t), t))
+
+
+def test_ledger_account_tokens_missing_ledger_returns_empty(tmp_path):
+    """No ledger file → no tokens (tests that construct DocRecord directly
+    must keep working without a data_dir setup)."""
+    from stages.s2_pdf import _ledger_account_tokens
+
+    assert _ledger_account_tokens(tmp_path / "missing.csv") == []

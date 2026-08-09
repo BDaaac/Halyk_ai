@@ -1,4 +1,8 @@
 import re
+from functools import lru_cache
+
+import pandas as pd
+
 from config import get_settings
 from lib.pdf import extract_text
 from lib.text import normalize_identifiers
@@ -101,12 +105,51 @@ def _document_type(text: str, report_number: str | None) -> str:
     return "noise"
 
 
+def _ledger_account_tokens(ledger_path) -> list[str]:
+    """Return unique account_id tokens observed in the ledger.
+
+    Different datasets can use different account-naming conventions
+    (``ACC-XXXX`` on public, ``TELE-XXXX`` and other prefixes on private).
+    Hardcoding a single regex makes the mapping brittle. Instead we
+    harvest the actual tokens from the ledger's ``account_id`` column
+    once and reuse them as literal substrings for document association.
+    Tokens are sorted longest-first so a shorter token cannot mask a
+    longer one that contains it as a prefix.
+    """
+    if not ledger_path.exists():
+        return []
+    ledger = pd.read_csv(ledger_path, usecols=["account_id"])
+    tokens = {
+        token
+        for token in ledger["account_id"].dropna().astype(str).unique()
+        if token
+    }
+    return sorted(tokens, key=lambda token: (-len(token), token))
+
+
+def _accounts_in_text(text: str, tokens) -> list[str]:
+    """Return the ledger account tokens that appear as substrings in ``text``,
+    preserving the order in ``tokens`` and eliminating duplicates."""
+    seen: list[str] = []
+    for token in tokens:
+        if token in text and token not in seen:
+            seen.append(token)
+    return seen
+
+
 def run(state=None):
     """Regex-only triage. LLM fallback for unnamed borrower docs is applied
     separately from run_pipeline via lib.doc_classify.apply_llm_fallback so
-    that unit tests calling build_document_index() do not fire the API."""
+    that unit tests calling build_document_index() do not fire the API.
+
+    Document→account association uses ledger-derived tokens rather than a
+    fixed ``ACC-\\d{4}`` regex, so non-``ACC`` account formats on private
+    datasets are recognised without borrower-specific code.
+    """
+    settings = get_settings()
+    account_tokens = _ledger_account_tokens(settings.data_dir / "master_ledger_2025.csv")
     records: dict[str, DocRecord] = {}
-    for path in get_settings().data_dir.joinpath("documents").glob("*.pdf"):
+    for path in settings.data_dir.joinpath("documents").glob("*.pdf"):
         raw_text, method = extract_text(path)
         text = normalize_identifiers(decode_legacy_pdf_text(raw_text))
         own_match = OWN_REPORT.search(text)
@@ -117,7 +160,7 @@ def run(state=None):
             doc_id=path.stem,
             text=text,
             extraction_method=method,
-            account_ids=ACC.findall(text),
+            account_ids=_accounts_in_text(text, account_tokens),
             mentioned_txn_ids=TXN.findall(text),
             report_number=report_number,
             references=references,
