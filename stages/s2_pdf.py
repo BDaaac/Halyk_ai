@@ -53,8 +53,11 @@ DRAFT_PATTERNS = (
     r"\bpreliminary\s+version\b",
 )
 SUPERSEDED_PATTERNS = (
+    # Real supersession markers only. `не\s+применяется` used to live here
+    # but was too broad: it also matched springing-covenant wording
+    # ("пока коэффициент … ограничение не применяется") and false-flagged
+    # active agreements as superseded, hiding covenant text from Stage 6.
     r"недействующая\s+редакция",
-    r"не\s+применяется",
     r"утратил\s+силу",
     r"\bsuperseded\b",
     r"\bsuperseded\s+by\b",

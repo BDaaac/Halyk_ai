@@ -25,14 +25,29 @@ from typing import Any, Iterable
 from models import DocRecord
 
 
-# Cap on documents that reach the LLM classifier in a single run.
-# Kept at 40 because the candidate rule (below) is narrow: on the public
-# set the acc-based rule surfaces 18 docs and the extended
-# consolidated-plus-name rule adds exactly one (a5cc1400b640). The
-# threshold has to stay lower than the realistic candidate count to be a
-# meaningful safety brake against a corpus-wide encoding failure that
-# would produce hundreds of candidates.
-MAX_LLM_CANDIDATES = 40
+# Caps on documents that reach the LLM classifier in a single run.
+#
+# The old single global cap (40) fired all-or-nothing: on a corpus where
+# candidates were evenly distributed across borrowers, hitting the cap by
+# borrower_count * 2 was enough to disable classification entirely, even
+# though no single borrower was pathological. The current caps separate
+# three concerns:
+#
+#   MAX_LLM_CANDIDATES_PER_ACCOUNT — one borrower shouldn't dominate the
+#     candidate list. If a single account contributes more than this, only
+#     the first N of its docs are classified; the remainder stay as noise.
+#
+#   MAX_LLM_CANDIDATES_CONSOLIDATED — consolidated group reports (no ACC,
+#     matched by borrower name) share a separate pool so a small handful
+#     of legitimate group audits is not squeezed out by a large per-account
+#     backlog and vice versa.
+#
+#   MAX_LLM_CANDIDATES_TOTAL — absolute safety brake against a corpus-wide
+#     encoding failure that would surface hundreds of ACC-carrying "noise"
+#     documents. Set well above realistic candidate counts.
+MAX_LLM_CANDIDATES_PER_ACCOUNT = 5
+MAX_LLM_CANDIDATES_CONSOLIDATED = 20
+MAX_LLM_CANDIDATES_TOTAL = 200
 TEXT_EXCERPT_CHARS = 1500
 
 ALLOWED_DOC_TYPES = ("agreement", "kyc", "aup", "audit_notes", "noise")
@@ -179,19 +194,55 @@ def apply_llm_fallback(
     document has no ACC of its own — see ``a5cc1400b640``).
     """
     borrower_names = _harvest_borrower_names(records.values())
-    candidates = [
+    raw_candidates = [
         record
         for record in records.values()
         if record.doc_type == "noise"
         and (record.account_ids or _is_consolidated_about_borrower(record.text, borrower_names))
     ]
-    if not candidates:
+    if not raw_candidates:
         return
-    if len(candidates) > MAX_LLM_CANDIDATES:
+
+    # Separate per-account caps from a single consolidated pool: an ACC-linked
+    # document belongs to one specific borrower and is capped alongside its
+    # siblings; a consolidated group report has no ACC of its own and shares
+    # a distinct pool so a borrower with many candidates does not starve out
+    # legitimate group-level audits (and vice versa).
+    from collections import defaultdict
+    per_account: dict[str, int] = defaultdict(int)
+    consolidated_count = 0
+    candidates: list[DocRecord] = []
+    for record in raw_candidates:
+        if record.account_ids:
+            if any(
+                per_account[acc] >= MAX_LLM_CANDIDATES_PER_ACCOUNT
+                for acc in record.account_ids
+            ):
+                _log(
+                    settings.workspace_dir,
+                    f"{record.doc_id}: per-account cap "
+                    f"{MAX_LLM_CANDIDATES_PER_ACCOUNT} reached for "
+                    f"{list(record.account_ids)}; kept as noise",
+                )
+                continue
+            for acc in record.account_ids:
+                per_account[acc] += 1
+        else:
+            if consolidated_count >= MAX_LLM_CANDIDATES_CONSOLIDATED:
+                _log(
+                    settings.workspace_dir,
+                    f"{record.doc_id}: consolidated cap "
+                    f"{MAX_LLM_CANDIDATES_CONSOLIDATED} reached; kept as noise",
+                )
+                continue
+            consolidated_count += 1
+        candidates.append(record)
+
+    if len(candidates) > MAX_LLM_CANDIDATES_TOTAL:
         _log(
             settings.workspace_dir,
-            f"skipped LLM fallback — {len(candidates)} noise-with-ACC candidates "
-            f"exceed threshold {MAX_LLM_CANDIDATES}",
+            f"skipped LLM fallback — {len(candidates)} candidates exceed "
+            f"corpus-wide safety brake {MAX_LLM_CANDIDATES_TOTAL}",
         )
         return
     if not settings.anthropic_api_key:

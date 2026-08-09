@@ -46,3 +46,34 @@ def test_version_status_recognises_english_draft_and_superseded_markers():
     assert _version_status("This procedure is no longer in effect") == "superseded"
     # Plain active document is unaffected.
     assert _version_status("Final report as at 31 December 2025") == "active"
+
+
+def test_version_status_keeps_springing_covenant_active():
+    """A springing covenant reads 'пока <condition>, ограничение не
+    применяется' — this is applicability wording inside an ACTIVE
+    agreement, not a supersession marker. The triage used to grab the
+    literal 'не применяется' and route the agreement into 'superseded',
+    which hid the covenant text from Stage 6."""
+    from stages.s2_pdf import _version_status
+
+    assert _version_status(
+        "Пока Коэффициент долговой нагрузки не превышает 3.00x, указанное "
+        "ограничение Капитальных затрат не применяется."
+    ) == "active"
+    assert _version_status(
+        "Пока Debt/EBITDA не превышает 2.40x, ограничение Распределений не применяется."
+    ) == "active"
+
+
+def test_version_status_explicit_russian_supersession_still_flagged():
+    """Real supersession phrases in Russian must still route to
+    'superseded' — 'недействующая редакция' and 'утратил силу' remain in
+    the pattern set."""
+    from stages.s2_pdf import _version_status
+
+    assert _version_status(
+        "НЕДЕЙСТВУЮЩАЯ РЕДАКЦИЯ (2024 г.). Заменена и изложена в новой редакции."
+    ) == "superseded"
+    assert _version_status(
+        "Настоящий договор утратил силу с 1 января 2025 года."
+    ) == "superseded"
